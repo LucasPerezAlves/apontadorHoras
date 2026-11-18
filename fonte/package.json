@@ -1,0 +1,19 @@
+{
+  "name": "apontador-horas",
+  "version": "1.0.0",
+  "description": "Apontador de Horas para o Work Session Hub do Azure DevOps",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "build:ui": "node build.js",
+    "build:exe": "node build.js && pkg . -t node22-win-x64 --options use-system-ca --no-bytecode --public-packages \"*\" --public -o dist/ApontadorHoras.exe"
+  },
+  "pkg": {
+    "scripts": [
+      "server.js",
+      "ui.js"
+    ]
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

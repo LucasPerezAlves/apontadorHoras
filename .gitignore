@@ -1,0 +1,15 @@
+# Binários gerados (distribuir via GitHub Releases)
+*.exe
+dist/
+
+# Dependências
+node_modules/
+
+# Gerado pelo build (fonte/build.js)
+fonte/ui.js
+
+# Diversos
+*.log
+.env
+.DS_Store
+Thumbs.db

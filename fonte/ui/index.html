@@ -1,0 +1,1592 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="app-token" content="__APP_TOKEN__">
+<title>Apontador de Horas</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⏱%3C/text%3E%3C/svg%3E">
+<style>
+  html, body { margin: 0; height: 100%; background: #16181d; }
+  * { box-sizing: border-box; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+  .panel { position: fixed; inset: 0; background: #16181d; color: #e6e8ec; display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
+  header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #2b2f38; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 600; }
+  button { background: #262a33; color: #e6e8ec; border: 1px solid #353a45; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #2f3440; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  button.primary:hover { background: #1d4ed8; }
+  button.danger { background: transparent; border-color: #7f1d1d; color: #fca5a5; }
+  button.danger.confirm { background: #b91c1c; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  a { color: #93c5fd; }
+  .icon { padding: 5px 8px; }
+  .week-label { font-weight: 600; min-width: 150px; text-align: center; }
+  .grow { flex: 1; }
+  .goal { display: flex; align-items: center; gap: 8px; }
+  .bar { width: 120px; height: 8px; background: #2b2f38; border-radius: 4px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: #17c964; }
+  .bar.low > i { background: #f5a524; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #713f12; color: #fde68a; }
+  .body { flex: 1; display: flex; min-height: 0; }
+  aside { width: 290px; border-right: 1px solid #2b2f38; display: flex; flex-direction: column; min-height: 0; }
+  .search { padding: 10px; border-bottom: 1px solid #2b2f38; display: flex; gap: 6px; }
+  input, select, textarea { background: #0f1115; color: #e6e8ec; border: 1px solid #353a45; border-radius: 6px; padding: 6px 8px; font-size: 13px; width: 100%; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #2563eb; border-color: transparent; }
+  .list { overflow: auto; flex: 1; padding: 6px; }
+  .sec { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #8b93a3; padding: 10px 6px 4px; }
+  .item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .item:hover { background: #1f232b; }
+  .item.sel { border-color: #2563eb; background: #1a2440; }
+  .item .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .item .txt { flex: 1; min-width: 0; }
+  .item .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .m { color: #8b93a3; font-size: 11px; }
+  .item .h { font-variant-numeric: tabular-nums; color: #cbd5e1; font-size: 12px; }
+  .item .acts { display: flex; gap: 2px; opacity: 0; }
+  .item:hover .acts, .item.sel .acts { opacity: 1; }
+  .item .acts button { padding: 2px 6px; font-size: 12px; background: transparent; border-color: transparent; }
+  .item .acts button:hover { background: #2f3440; }
+  .running-box { padding: 10px; border-top: 1px solid #2b2f38; background: #1c1420; display: none; }
+  .running-box.on { display: block; }
+  .cal { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .cal-head { display: grid; grid-template-columns: 52px repeat(7, minmax(90px, 1fr)); border-bottom: 1px solid #2b2f38; }
+  .dh { padding: 8px 6px; border-left: 1px solid #2b2f38; }
+  .dh.today { background: #172036; }
+  .dh .n { font-weight: 600; }
+  .dh .tot { font-size: 12px; color: #8b93a3; display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .dh .mini { height: 4px; background: #2b2f38; border-radius: 2px; margin-top: 4px; overflow: hidden; }
+  .dh .mini > i { display: block; height: 100%; background: #17c964; }
+  .dh .mini.low > i { background: #f5a524; }
+  .dh.we { opacity: .7; }
+  .scroller { flex: 1; overflow: auto; }
+  .grid { display: grid; grid-template-columns: 52px repeat(7, minmax(90px, 1fr)); position: relative; }
+  .gutter { position: relative; }
+  .gutter span { position: absolute; right: 6px; font-size: 11px; color: #6b7280; transform: translateY(-50%); }
+  .col { position: relative; border-left: 1px solid #2b2f38; cursor: crosshair; user-select: none; }
+  .col.we { background: rgba(255,255,255,.015); }
+  .col.today { background: rgba(37,99,235,.05); }
+  .hl { position: absolute; left: 0; right: 0; border-top: 1px solid #23262e; pointer-events: none; }
+  .hl.half { border-top-style: dashed; border-color: #1d2027; }
+  .now { position: absolute; left: 0; right: 0; border-top: 2px solid #f31260; pointer-events: none; z-index: 3; }
+  .blk { position: absolute; left: 3px; right: 3px; border-radius: 6px; padding: 3px 6px; overflow: hidden; cursor: pointer; z-index: 2;
+    font-size: 11.5px; line-height: 1.25; color: #0b0d10; border: 1px solid rgba(0,0,0,.25); }
+  .blk:hover { filter: brightness(1.1); }
+  .blk b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .blk.run { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.25) 0 6px, transparent 6px 12px) !important; }
+  .ghost { position: absolute; left: 3px; right: 3px; border-radius: 6px; background: rgba(37,99,235,.35); border: 1px dashed #60a5fa; z-index: 4; pointer-events: none; font-size: 11px; padding: 3px 6px; }
+  .status { padding: 4px 14px; font-size: 12px; color: #8b93a3; border-top: 1px solid #2b2f38; display: flex; gap: 12px; }
+  .modal-bg { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 20; }
+  .modal-bg.on { display: flex; }
+  .modal { width: min(480px, 94%); background: #1b1e25; border: 1px solid #353a45; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; max-height: 92vh; overflow: auto; }
+  .modal h2 { margin: 0; font-size: 15px; }
+  .modal p { margin: 0; color: #b6bdc9; line-height: 1.45; }
+  .modal ol { margin: 0; padding-left: 18px; color: #b6bdc9; line-height: 1.6; }
+  .row { display: flex; gap: 8px; }
+  .row > label { flex: 1; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9aa3b2; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chips button { padding: 3px 8px; font-size: 12px; }
+  .err { color: #fca5a5; font-size: 12px; min-height: 16px; }
+  .foot { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+  .chk { flex-direction: row; align-items: center; gap: 6px; color: #cbd5e1; }
+  .chk input { width: auto; }
+  .toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: #0f1115; border: 1px solid #353a45; padding: 8px 14px; border-radius: 8px; z-index: 30; display: none; max-width: 80%; }
+  .toast.on { display: block; }
+  .toast.bad { border-color: #b91c1c; color: #fecaca; }
+  .empty { color: #8b93a3; padding: 12px 8px; font-size: 12px; }
+  .loading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(22,24,29,.6); z-index: 15; font-size: 14px; }
+  .loading.on { display: flex; }
+  code { background: #0f1115; padding: 1px 5px; border-radius: 4px; }
+  .tabs button { position: relative; }
+  .tdot { display: none; width: 7px; height: 7px; border-radius: 50%; background: #f31260; margin-left: 6px; vertical-align: middle; animation: pulse 1.4s infinite; }
+  .tdot.on { display: inline-block; }
+  .tdot.paused { background: #f5a524; animation: none; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .timerv { flex: 1; overflow: auto; padding: 22px; display: none; }
+  .timerv.on { display: block; }
+  .tlay { display: flex; gap: 18px; align-items: flex-start; justify-content: center; }
+  .tw { flex: 1; max-width: 620px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .parked { width: 300px; flex: none; display: flex; flex-direction: column; gap: 10px; }
+  .parked h3 { margin: 0; font-size: 13px; color: #fde68a; }
+  .pk { background: #1f1c14; border: 1px solid #4d3f12; border-radius: 10px; padding: 10px 12px; }
+  .pk-h { display: flex; align-items: center; gap: 6px; font-size: 12.5px; min-width: 0; }
+  .pk-h .sw { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+  .pk-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #cbd5e1; }
+  .pk-c { font-size: 26px; font-weight: 700; color: #fde68a; font-variant-numeric: tabular-nums; margin: 4px 0 2px; }
+  .pk-b { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap; }
+  .pk-b button { padding: 4px 8px; font-size: 12px; }
+  .pk-b .go { background: #16a34a; border-color: #16a34a; color: #fff; }
+  .pk-b .ap { background: #2563eb; border-color: #2563eb; color: #fff; }
+  @media (max-width: 1100px) { .tlay { flex-direction: column; align-items: stretch; } .parked { width: auto; } .tw { max-width: none; } }
+  .tcard { background: #1b1e25; border: 1px solid #2b2f38; border-radius: 12px; padding: 16px 18px; }
+  .clock { font-size: 64px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; letter-spacing: 2px; margin: 6px 0 2px; }
+  .clock.run { color: #86efac; }
+  .clock.pause { color: #fde68a; }
+  .tstate { text-align: center; color: #9aa3b2; font-size: 13px; min-height: 18px; }
+  .tbtns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+  .tbtns button { padding: 11px 6px; font-size: 14px; font-weight: 600; border-radius: 8px; }
+  .tbtns .go { background: #16a34a; border-color: #16a34a; color: #fff; }
+  .tbtns .pz { background: #ca8a04; border-color: #ca8a04; color: #fff; }
+  .tbtns .ap { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .tbtns .st { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+  .seg { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #23262e; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .seg:last-child { border-bottom: 0; }
+  .tlink { background: none; border: 0; color: #93c5fd; padding: 0; font-size: 12px; cursor: pointer; }
+  .side-tabs { display: flex; gap: 4px; padding: 8px 10px 0; }
+  .side-tabs button { flex: 1; font-size: 12px; padding: 6px 4px; background: transparent; border-color: transparent; color: #9aa3b2; border-radius: 6px 6px 0 0; border-bottom: 2px solid transparent; }
+  .side-tabs button.on { color: #e6e8ec; border-bottom-color: #2563eb; background: #1b1e25; }
+  .range { display: flex; gap: 4px; padding: 0 10px 8px; align-items: center; }
+  .range button { padding: 2px 8px; font-size: 11.5px; border-radius: 10px; }
+  .range button.on { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .range .hint { margin-left: auto; font-size: 11px; color: #6b7280; }
+  .item .new { font-size: 10px; padding: 0 5px; border-radius: 6px; background: #1e3a8a; color: #bfdbfe; margin-left: 4px; }
+  .tabs { display: flex; background: #0f1115; border: 1px solid #353a45; border-radius: 8px; padding: 2px; }
+  .tabs button { border: 0; background: transparent; padding: 4px 10px; }
+  .tabs button.on { background: #2563eb; color: #fff; }
+  .prod { flex: 1; overflow: auto; padding: 14px 18px; display: none; }
+  .prod.on { display: block; }
+  .body.off { display: none; }
+  .p-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .p-nav .mlabel { font-weight: 600; font-size: 15px; min-width: 150px; text-align: center; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .kpi { background: #1b1e25; border: 1px solid #2b2f38; border-radius: 10px; padding: 12px 14px; }
+  .kpi .l { color: #8b93a3; font-size: 12px; }
+  .kpi .v { font-size: 28px; font-weight: 700; margin: 4px 0; font-variant-numeric: tabular-nums; }
+  .kpi .v small { font-size: 14px; color: #8b93a3; font-weight: 500; }
+  .kpi .h { color: #9aa3b2; font-size: 12px; }
+  .kpi .pbar { height: 6px; background: #2b2f38; border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .kpi .pbar > i { display: block; height: 100%; background: #17c964; }
+  .kpi .pbar.low > i { background: #f5a524; }
+  .chart { background: #1b1e25; border: 1px solid #2b2f38; border-radius: 10px; padding: 12px 14px 8px; margin-bottom: 18px; }
+  .chart h3, .p-sec h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: #cbd5e1; }
+  .bars { display: flex; align-items: flex-end; gap: 4px; height: 140px; position: relative; border-bottom: 1px solid #2b2f38; }
+  .bars .goal-line { position: absolute; left: 0; right: 0; border-top: 1px dashed #f5a524; pointer-events: none; }
+  .bars .b { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; cursor: pointer; border-radius: 4px 4px 0 0; }
+  .bars .b:hover { background: rgba(255,255,255,.04); }
+  .bars .b.sel { background: rgba(37,99,235,.18); }
+  .bars .b i { display: block; width: 70%; background: #4f8cff; border-radius: 3px 3px 0 0; min-height: 0; }
+  .bars .b.met i { background: #17c964; }
+  .bars .b.we i { background: #475569; }
+  .bars .b span { font-size: 10px; color: #cbd5e1; margin-bottom: 2px; }
+  .xlab { display: flex; gap: 4px; margin-top: 4px; }
+  .xlab span { flex: 1; text-align: center; font-size: 10px; color: #6b7280; }
+  .xlab span.today { color: #93c5fd; font-weight: 700; }
+  .p-sec { background: #1b1e25; border: 1px solid #2b2f38; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+  table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.t th { text-align: left; color: #8b93a3; font-weight: 500; padding: 6px 8px; border-bottom: 1px solid #2b2f38; }
+  table.t td { padding: 6px 8px; border-bottom: 1px solid #23262e; vertical-align: top; }
+  table.t td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.t tr:last-child td { border-bottom: 0; }
+  .muted { color: #8b93a3; }
+  .warn-h { color: #fde68a !important; }
+  .chip-btn { padding: 2px 8px; font-size: 12px; }
+  @media (max-width: 1000px) {
+    aside { width: 210px; }
+    .item .acts { display: none; }
+    .item.sel .acts { display: flex; }
+  }
+</style>
+</head>
+<body>
+<div class="panel">
+  <header>
+    <h1>⏱ Apontador de Horas</h1>
+    <button class="icon" data-act="prev" title="Semana anterior">‹</button>
+    <span class="week-label"></span>
+    <button class="icon" data-act="next" title="Próxima semana">›</button>
+    <button data-act="today">Hoje</button>
+    <span class="tabs"><button data-act="view-cal" class="on">📅 Calendário</button><button data-act="view-prod">📊 Produtividade</button><button data-act="view-timer">⏱ Cronômetro<span class="tdot"></span></button></span>
+    <span class="grow"></span>
+    <span class="badge test" style="display:none">MODO TESTE: nada é gravado</span>
+    <span class="goal"><span class="goal-txt"></span><span class="bar"><i></i></span></span>
+    <button class="icon" data-act="new" title="Nova sessão">＋ Sessão</button>
+    <button class="icon" data-act="reload" title="Recarregar">↻</button>
+    <button class="icon" data-act="settings" title="Configurações">⚙</button>
+  </header>
+  <div class="body">
+    <aside>
+      <div class="side-tabs"><button data-act="side-mine" class="on">Meus itens</button><button data-act="side-recent">Criados recentemente</button></div>
+      <div class="range" style="display:none"><button data-act="r-days" data-days="1" class="on">Hoje</button><button data-act="r-days" data-days="3">3 dias</button><button data-act="r-days" data-days="7">7 dias</button><span class="hint">2 cliques = apontar</span></div>
+      <div class="search"><input class="q" placeholder="Filtrar, #ID ou título…"><button class="icon" data-act="search" title="Buscar no Azure">🔎</button></div>
+      <div class="list"></div>
+      <div class="running-box"></div>
+    </aside>
+    <div class="cal">
+      <div class="cal-head"></div>
+      <div class="scroller"><div class="grid"></div></div>
+    </div>
+  </div>
+  <div class="prod"></div>
+  <div class="timerv"></div>
+  <div class="status"><span class="st-left">Arraste no calendário para criar uma sessão · clique numa sessão para editar</span><span class="grow"></span><span class="st-right"></span></div>
+  <div class="loading">Carregando…</div>
+  <div class="modal-bg"><div class="modal"></div></div>
+  <div class="toast"></div>
+</div>
+<script>
+(function () {
+  'use strict';
+  const APP_TOKEN = document.querySelector('meta[name="app-token"]').content;
+  const F_WS = 'Custom.WorkSessionEntry';
+  const F_AH = 'Custom.ActualHours';
+  const F_CAH = 'Custom.ChildActualHours';
+  const FIELDS = ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.Parent', 'System.TeamProject', F_WS, F_AH];
+  const LS_KEY = 'apontadorHoras.app.v1';
+  const PALETTE = ['#4f8cff', '#f5a524', '#17c964', '#f31260', '#9353d3', '#06b7db', '#ff7a45', '#a3e635', '#e879f9', '#94a3b8'];
+  const PX_PER_HOUR = 44;
+  const SNAP_MIN = 15;
+  const DAY_NAMES = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+  const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+  const prefs = Object.assign({ pinned: [], known: [], dailyGoal: 8, cardGoal: 0, dayStart: 7, dayEnd: 20, dryRun: false }, loadPrefs());
+  function loadPrefs() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch { return {}; } }
+  function savePrefs() { try { localStorage.setItem(LS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ } }
+
+  const S = { me: null, org: 'emr-cm', project: 'EMR', items: new Map(), weekStart: startOfWeek(new Date()), selectedId: null, filter: '', busy: false, view: 'cal', side: 'mine' };
+  // Aba lateral "Criados recentemente"
+  const R = { days: 1, rows: [], raw: new Map(), loading: false, error: '', key: '' };
+
+  // ───────── Datas ─────────
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function startOfWeek(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+  function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+  function timeStr(d) { return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+  function dateInput(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+  function combine(ds, ts) { const [y, m, d] = ds.split('-').map(Number); const [h, mi] = ts.split(':').map(Number); return new Date(y, m - 1, d, h, mi, 0, 0); }
+  function truncMin(d) { const x = new Date(d); x.setSeconds(0, 0); return x; }
+  function fmtH(h) { const m = Math.round(h * 60); return `${Math.floor(m / 60)}h${pad(m % 60)}`; }
+  function fmtRange(e) { const s = new Date(e.start); return `${pad(s.getDate())}/${pad(s.getMonth() + 1)} ${timeStr(s)}–${e.end ? timeStr(new Date(e.end)) : 'em andamento'}`; }
+
+  // ───────── Sessões (mesmo formato da extensão Work Session Hub) ─────────
+  function decodeHtml(s) { return new DOMParser().parseFromString(`<textarea>${s}</textarea>`, 'text/html').querySelector('textarea').value; }
+  function htmlText(s) { return new DOMParser().parseFromString(s, 'text/html').documentElement.textContent || ''; }
+  function parseEntries(raw) {
+    if (raw == null) return [];
+    if (typeof raw !== 'string') return null;
+    const s = raw.trim();
+    if (!s) return [];
+    for (const c of [s, decodeHtml(s), htmlText(s)]) {
+      try { const v = JSON.parse(c); if (Array.isArray(v)) return v; } catch { /* tenta o próximo */ }
+    }
+    return null;
+  }
+  const floorMin = (d) => Math.floor(new Date(d).getTime() / 6e4) * 6e4;
+  function entryHours(e, now = Date.now()) {
+    if (!e.start) return 0;
+    const s = new Date(e.start).getTime();
+    const en = e.end ? new Date(e.end).getTime() : now;
+    return Math.max(0, (en - s) / 36e5);
+  }
+  function closedTotal(arr) { return Math.round(100 * arr.reduce((a, e) => (e.start && e.end ? a + entryHours(e) : a), 0)) / 100; }
+  function overlaps(a, b) {
+    if (!a.start || !b.start) return false;
+    const as = floorMin(a.start), bs = floorMin(b.start);
+    const ae = a.end ? floorMin(a.end) : Infinity, be = b.end ? floorMin(b.end) : Infinity;
+    return Math.max(as, bs) < Math.min(ae, be);
+  }
+  function isMine(e) { return !!S.me && (e.userEmail || '').trim().toLowerCase() === S.me.email; }
+  function newId() { return `ws-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; }
+
+  // ───────── Comunicação com o app local ─────────
+  async function local(path, { method = 'GET', body } = {}) {
+    const res = await fetch(path, { method, body: body ? JSON.stringify(body) : undefined, headers: { 'X-App-Token': APP_TOKEN, 'Content-Type': 'application/json' } });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.message || `Erro ${res.status}`);
+    return j;
+  }
+  async function api(path, { method = 'GET', body, headers = {} } = {}) {
+    let res;
+    try {
+      res = await fetch('/api/ado' + path, { method, body, headers: { 'X-App-Token': APP_TOKEN, Accept: 'application/json', ...headers } });
+    } catch {
+      throw new Error('O app foi fechado. Abra o ApontadorHoras.exe de novo.');
+    }
+    const text = await res.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch { /* não-JSON */ }
+    if (!res.ok) {
+      const err = new Error((json && json.message) || `HTTP ${res.status}`);
+      err.status = res.status;
+      if (res.status === 401) setTimeout(() => openSetup('O token não está mais valendo. Gere um novo e cole aqui.'), 50);
+      throw err;
+    }
+    return json;
+  }
+  async function wiql(query, project = S.project, top = 200) {
+    const j = await api(`/${encodeURIComponent(project)}/_apis/wit/wiql?$top=${top}&api-version=7.1`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }),
+    });
+    return (j.workItems || []).map((w) => w.id);
+  }
+  async function getItems(ids) {
+    const out = [];
+    const uniq = [...new Set(ids.map(Number))].filter(Boolean);
+    for (let i = 0; i < uniq.length; i += 200) {
+      const chunk = uniq.slice(i, i + 200);
+      const j = await api(`/_apis/wit/workitems?ids=${chunk.join(',')}&fields=${FIELDS.join(',')}&errorPolicy=Omit&api-version=7.1`);
+      for (const w of j.value || []) if (w && w.fields) out.push(w);
+    }
+    return out;
+  }
+  // ───────── Lista do Work Session Hub (para os itens aparecerem lá) ─────────
+  async function idx(method, sub = '', body) {
+    let res;
+    try { res = await fetch('/api/index' + sub, { method, body: body ? JSON.stringify(body) : undefined, headers: { 'X-App-Token': APP_TOKEN, 'Content-Type': 'application/json' } }); }
+    catch { throw new Error('O app foi fechado. Abra o ApontadorHoras.exe de novo.'); }
+    const text = await res.text();
+    let j = null;
+    try { j = text ? JSON.parse(text) : null; } catch { /* não-JSON */ }
+    if (!res.ok) { const e = new Error((j && j.message) || `HTTP ${res.status}`); e.status = res.status; e.code = j?.code; e.typeKey = j?.typeKey; throw e; }
+    return j;
+  }
+  async function readIndex() {
+    try { return await idx('GET', '/' + encodeURIComponent(S.me.email)); }
+    catch (e) { if (e.status === 404) return null; throw e; }
+  }
+  async function writeIndex(update) {
+    let cur = await readIndex();
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      const before = cur?.workItems ?? [];
+      const after = update(before.slice());
+      if (cur && after.length === before.length && after.every((x, i) => x === before[i])) return cur;
+      const doc = { ...(cur || {}), id: S.me.email, name: cur?.name ?? S.me.email, workItems: after };
+      if (!cur) delete doc.__etag;
+      if (attempt === 4) doc.__etag = -1;
+      try { return await idx('PUT', '', doc); }
+      catch (e) {
+        const conflict = e.status === 409 || e.status === 412 || /InvalidDocumentVersion|1660003/.test(`${e.message} ${e.typeKey || ''}`);
+        if (attempt === 4 || !conflict) throw e;
+        cur = await readIndex();
+      }
+    }
+  }
+  function indexWarn(e) {
+    console.warn('[Apontador] índice do hub', e);
+    if (S.indexWarned) return;
+    S.indexWarned = true;
+    toast(e.code === 'EXT_SCOPE'
+      ? 'Horas salvas no item, mas para aparecerem no Work Session Hub o token precisa da permissão "Extension Data (Read & write)". Gere um novo em ⚙ → Trocar token.'
+      : `Horas salvas, mas não consegui atualizar a lista do Work Session Hub: ${e.message}`, true);
+  }
+  async function hubAdd(ids) {
+    if (prefs.dryRun || !ids.length) return;
+    try { await writeIndex((w) => [...w, ...ids.filter((id) => !w.includes(id))]); } catch (e) { indexWarn(e); }
+  }
+  async function hubRemoveIfEmpty(id) {
+    if (prefs.dryRun) return;
+    const it = S.items.get(id);
+    if (it && it.entries.some(isMine)) return;
+    try { await writeIndex((w) => w.filter((x) => x !== id)); } catch (e) { indexWarn(e); }
+  }
+
+  function toItem(w) {
+    const entries = parseEntries(w.fields[F_WS]);
+    return {
+      id: w.id, rev: w.rev,
+      title: w.fields['System.Title'] || `#${w.id}`,
+      type: w.fields['System.WorkItemType'] || '',
+      state: w.fields['System.State'] || '',
+      parent: w.fields['System.Parent'],
+      project: w.fields['System.TeamProject'] || S.project,
+      entries: entries || [],
+      unreadable: entries === null,
+    };
+  }
+
+  function parseItemId(v) { const m = String(v || '').match(/\d{3,}/); return m ? Number(m[0]) : null; }
+  // Busca um item que ainda não está na lista e fixa ele, para aparecer da próxima vez
+  async function ensureItem(id) {
+    if (S.items.has(id)) return S.items.get(id);
+    const [w] = await getItems([id]);
+    if (!w) return null;
+    const it = toItem(w);
+    S.items.set(it.id, it);
+    if (!prefs.pinned.includes(it.id)) { prefs.pinned.push(it.id); savePrefs(); }
+    return it;
+  }
+
+  async function loadAll() {
+    let ids = [];
+    const base = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.ChangedDate] >= @Today - 45`;
+    try {
+      ids = await wiql(`${base} AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me) ORDER BY [System.ChangedDate] DESC`);
+    } catch (e) {
+      if (e.status === 401) throw e;
+      ids = await wiql(`${base} AND [System.AssignedTo] = @Me ORDER BY [System.ChangedDate] DESC`);
+    }
+    let hubIds = [];
+    try { hubIds = (await readIndex())?.workItems || []; S.hubIds = hubIds; } catch (e) { if (e.code !== 'EXT_SCOPE') console.warn('[Apontador] índice', e); }
+    const all = await getItems([...ids, ...prefs.pinned, ...prefs.known, ...hubIds]);
+    S.items = new Map(all.map((w) => [w.id, toItem(w)]));
+    rememberKnown();
+    // Itens com sessões suas que o Work Session Hub ainda não lista (ex.: lançados por este app antes)
+    const missing = [...S.items.values()].filter((it) => it.entries.some(isMine) && !hubIds.includes(it.id)).map((it) => it.id);
+    if (missing.length) hubAdd(missing);
+  }
+  function rememberKnown() {
+    const mine = [...S.items.values()].filter((it) => it.entries.some(isMine)).map((it) => it.id);
+    prefs.known = [...new Set([...mine, ...prefs.known])].slice(0, 300);
+    savePrefs();
+  }
+  async function refreshItem(id) {
+    const [w] = await getItems([id]);
+    if (w) S.items.set(w.id, toItem(w));
+  }
+
+  // Lê o item fresco, aplica a mudança e grava com teste de revisão (não sobrescreve alteração de outra pessoa).
+  async function mutateItem(id, fn) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const [w] = await getItems([id]);
+      if (!w) throw new Error(`Item #${id} não encontrado.`);
+      const it = toItem(w);
+      if (it.unreadable) throw new Error(`Não consegui ler as sessões já gravadas no item #${id}. Nada foi alterado.`);
+      const next = fn(it.entries.slice(), it);
+      const ops = [
+        { op: 'test', path: '/rev', value: it.rev },
+        { op: 'add', path: `/fields/${F_WS}`, value: JSON.stringify(next) },
+        { op: 'add', path: `/fields/${F_AH}`, value: closedTotal(next) },
+      ];
+      try {
+        await api(`/_apis/wit/workitems/${id}?api-version=7.1${prefs.dryRun ? '&validateOnly=true' : ''}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json-patch+json' }, body: JSON.stringify(ops),
+        });
+      } catch (e) {
+        const revConflict = e.status === 409 || e.status === 412 || /\brev\b|TF26071|TF401289|test operation/i.test(e.message);
+        if (attempt < 3 && revConflict) continue;
+        throw e;
+      }
+      if (!prefs.dryRun) {
+        await refreshItem(id);
+        rollupFeature(it).catch((err) => console.warn('[Apontador] rollup da Feature falhou', err));
+      }
+      return next;
+    }
+    throw new Error('O item foi alterado por outra pessoa várias vezes seguidas. Tente de novo.');
+  }
+
+  // Mesmo comportamento da extensão: recalcula ActualHours/ChildActualHours da Feature pai.
+  async function rollupFeature(it) {
+    let featId = null;
+    if (it.type === 'Feature') featId = it.id;
+    else if (it.parent) {
+      const [p] = await getItems([it.parent]);
+      if (p && p.fields['System.WorkItemType'] === 'Feature') featId = p.id;
+    }
+    if (!featId) return;
+    const proj = it.project || S.project;
+    const childIds = await wiql(`SELECT [System.Id] FROM WorkItems WHERE [System.Parent] = ${featId} AND [System.TeamProject] = '${proj.replace(/'/g, "''")}'`, proj);
+    const all = await getItems([featId, ...childIds]);
+    let own = 0, child = 0;
+    for (const w of all) {
+      const h = closedTotal(parseEntries(w.fields[F_WS]) || []);
+      if (w.id === featId) own += h; else child += h;
+    }
+    await api(`/_apis/wit/workitems/${featId}?api-version=7.1`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json-patch+json' },
+      body: JSON.stringify([
+        { op: 'add', path: `/fields/${F_AH}`, value: Math.round(own * 100) / 100 },
+        { op: 'add', path: `/fields/${F_CAH}`, value: Math.round(child * 100) / 100 },
+      ]),
+    });
+  }
+
+  async function assertNoConflict(candidate, excludeEntryId) {
+    const fresh = await getItems([...S.items.keys()]);
+    for (const w of fresh) {
+      const it = toItem(w);
+      S.items.set(it.id, it);
+      for (const e of it.entries) {
+        if (e.id && e.id === excludeEntryId) continue;
+        if (isMine(e) && overlaps(candidate, e)) throw new Error(`Esse horário bate com outra sessão sua (${fmtRange(e)}) no item #${it.id}.`);
+      }
+    }
+  }
+
+  async function createSession({ itemId, start, end, notes }, ignoreEntryId) {
+    start = truncMin(start); end = end ? truncMin(end) : undefined;
+    if (end && end <= start) throw new Error('O fim precisa ser depois do início.');
+    const email = S.me.email;
+    const entry = {
+      id: newId(), name: `${email} @ ${start.toISOString()}`, workItemId: itemId, userEmail: email,
+      start: start.toISOString(), end: end ? end.toISOString() : undefined, notes: notes || '',
+      createdAt: new Date().toISOString(), createdBy: email,
+    };
+    await assertNoConflict(entry, ignoreEntryId);
+    await mutateItem(itemId, (entries) => {
+      const clash = entries.find((e) => isMine(e) && e.id !== ignoreEntryId && overlaps(entry, e));
+      if (clash) throw new Error(`Esse horário bate com outra sessão sua (${fmtRange(clash)}) neste item.`);
+      return [...entries, entry];
+    });
+    if (!prefs.known.includes(itemId)) { prefs.known.unshift(itemId); savePrefs(); }
+    await hubAdd([itemId]);
+  }
+
+  async function updateSession(itemId, entryId, { start, end, notes }) {
+    start = truncMin(start); end = end ? truncMin(end) : undefined;
+    if (end && end <= start) throw new Error('O fim precisa ser depois do início.');
+    const probe = { start: start.toISOString(), end: end ? end.toISOString() : undefined };
+    await assertNoConflict(probe, entryId);
+    await mutateItem(itemId, (entries) => {
+      const i = entries.findIndex((e) => e.id === entryId);
+      if (i < 0) throw new Error('Essa sessão não existe mais (talvez tenha sido excluída em outro lugar).');
+      const cur = entries[i];
+      const upd = { ...cur, workItemId: itemId, start: probe.start, end: probe.end, notes: notes ?? cur.notes ?? '', lastUpdate: new Date().toISOString(), updatedBy: S.me.email };
+      if (!upd.end) delete upd.end;
+      return entries.map((e, j) => (j === i ? upd : e));
+    });
+  }
+
+  async function deleteSession(itemId, entryId) {
+    await mutateItem(itemId, (entries) => {
+      const next = entries.filter((e) => e.id !== entryId);
+      if (next.length === entries.length) throw new Error('Essa sessão não existe mais.');
+      return next;
+    });
+    await hubRemoveIfEmpty(itemId);
+  }
+
+  async function moveSession(fromId, entryId, toId, data) {
+    // Remove do item antigo e cria no novo; se a criação falhar, devolve a sessão original.
+    const from = S.items.get(fromId);
+    const orig = from?.entries.find((e) => e.id === entryId);
+    if (!orig) throw new Error('Sessão original não encontrada.');
+    if (prefs.dryRun) { await createSession({ ...data, itemId: toId }, entryId); return; }
+    await deleteSession(fromId, entryId);
+    try { await createSession({ ...data, itemId: toId }); }
+    catch (e) {
+      await mutateItem(fromId, (entries) => [...entries, orig]).catch(() => {});
+      throw e;
+    }
+  }
+
+  // ───────── Derivados p/ a tela ─────────
+  function colorOf(id) { return PALETTE[Math.abs(Number(id) * 2654435761 % 2 ** 32) % PALETTE.length]; }
+  function myEntries() {
+    const out = [];
+    for (const it of S.items.values()) for (const e of it.entries) if (isMine(e) && e.start) out.push({ it, e });
+    return out;
+  }
+  function runningEntry() { return myEntries().find(({ e }) => !e.end); }
+  function weekSegments() {
+    const segs = [];
+    const now = new Date();
+    for (const { it, e } of myEntries()) {
+      const s = new Date(e.start), en = e.end ? new Date(e.end) : now;
+      for (let d = 0; d < 7; d++) {
+        const day0 = addDays(S.weekStart, d), day1 = addDays(day0, 1);
+        const a = s > day0 ? s : day0, b = en < day1 ? en : day1;
+        if (b > a) segs.push({ it, e, day: d, a, b, hours: (b - a) / 36e5 });
+      }
+    }
+    return segs;
+  }
+
+  // ───────── UI ─────────
+  const $ = (sel) => document.querySelector(sel);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const azureUrl = (it) => `https://dev.azure.com/${encodeURIComponent(S.org)}/${encodeURIComponent(it.project)}/_workitems/edit/${it.id}`;
+
+  let toastTimer;
+  function toast(msg, bad = false) {
+    const t = $('.toast');
+    t.textContent = msg; t.className = `toast on${bad ? ' bad' : ''}`;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.className = 'toast'), bad ? 6000 : 3000);
+  }
+  function setLoading(on, msg = 'Carregando…') { const l = $('.loading'); l.textContent = msg; l.classList.toggle('on', on); }
+  async function run(label, fn) {
+    if (S.busy) return;
+    S.busy = true; setLoading(true, label);
+    try { await fn(); return true; }
+    catch (e) { console.error('[Apontador]', e); if (e.status !== 401) toast(e.message || String(e), true); return false; }
+    finally { S.busy = false; setLoading(false); render(); }
+  }
+
+  function render() {
+    renderHeader(); renderList(); renderCalendar(); renderRunning();
+    if (S.view === 'prod') renderProd();
+    if (S.view === 'timer' && !document.activeElement?.closest?.('.timerv')) renderTimer(); else renderTimerBadge();
+    $('.badge.test').style.display = prefs.dryRun ? '' : 'none';
+    const r = S.me && runningEntry();
+    document.title = r ? `● ${fmtH(entryHours(r.e))} · Apontador de Horas` : 'Apontador de Horas';
+  }
+  function renderHeader() {
+    const end = addDays(S.weekStart, 6);
+    const sameM = S.weekStart.getMonth() === end.getMonth();
+    $('.week-label').textContent = `${S.weekStart.getDate()}${sameM ? '' : ' ' + MONTHS[S.weekStart.getMonth()]} – ${end.getDate()} ${MONTHS[end.getMonth()]} ${end.getFullYear()}`;
+    const total = weekSegments().reduce((a, s) => a + s.hours, 0);
+    const goal = prefs.dailyGoal * 5;
+    $('.goal-txt').textContent = `Semana: ${fmtH(total)} / ${fmtH(goal)}`;
+    const bar = $('.goal .bar');
+    bar.querySelector('i').style.width = `${Math.min(100, (100 * total) / goal)}%`;
+    bar.classList.toggle('low', total < goal);
+    $('.st-right').textContent = S.me ? `${S.me.name} · ${S.org}/${S.project} · ${S.items.size} itens` : '';
+  }
+  function weekHoursByItem() {
+    const m = new Map();
+    for (const s of weekSegments()) m.set(s.it.id, (m.get(s.it.id) || 0) + s.hours);
+    return m;
+  }
+  function renderList() {
+    if (S.side === 'recent') return renderRecent();
+    const list = $('.list');
+    const f = S.filter.trim().toLowerCase().replace(/^#/, '');
+    const wh = weekHoursByItem();
+    const items = [...S.items.values()].filter((it) => !f || String(it.id).includes(f) || it.title.toLowerCase().includes(f));
+    const closed = (it) => /^(Closed|Removed|Done)$/i.test(it.state);
+    const groups = [
+      ['Com horas nesta semana', items.filter((it) => wh.has(it.id)).sort((a, b) => wh.get(b.id) - wh.get(a.id))],
+      ['Fixados', items.filter((it) => !wh.has(it.id) && prefs.pinned.includes(it.id))],
+      ['Meus itens recentes', items.filter((it) => !wh.has(it.id) && !prefs.pinned.includes(it.id) && !closed(it))],
+      ['Fechados', items.filter((it) => !wh.has(it.id) && !prefs.pinned.includes(it.id) && closed(it))],
+    ];
+    let html = '';
+    for (const [name, arr] of groups) {
+      if (!arr.length) continue;
+      html += `<div class="sec">${esc(name)}</div>`;
+      for (const it of arr) {
+        const pinned = prefs.pinned.includes(it.id);
+        html += `<div class="item${S.selectedId === it.id ? ' sel' : ''}" data-id="${it.id}" title="${esc(it.title)}">
+          <span class="sw" style="background:${colorOf(it.id)}"></span>
+          <div class="txt"><div class="t">${esc(it.title)}</div><div class="m">#${it.id} · ${esc(it.type)} · ${esc(it.state)}${it.unreadable ? ' · ⚠ sessões ilegíveis' : ''}</div></div>
+          ${wh.has(it.id) ? `<span class="h">${fmtH(wh.get(it.id))}</span>` : ''}
+          <span class="acts">
+            <button data-act="timer" data-id="${it.id}" title="Iniciar no cronômetro">▶</button>
+            <button data-act="pin" data-id="${it.id}" title="${pinned ? 'Desafixar' : 'Fixar'}">${pinned ? '★' : '☆'}</button>
+            <a href="${azureUrl(it)}" target="_blank" rel="noopener" title="Abrir no Azure"><button tabindex="-1">↗</button></a>
+          </span></div>`;
+      }
+    }
+    if (!html) html = `<div class="empty">${S.me ? 'Nenhum item. Busque por #ID ou título e clique em 🔎.' : 'Carregando…'}</div>`;
+    list.innerHTML = html;
+  }
+  const RECENT_FIELDS = [...FIELDS, 'System.CreatedDate', 'System.CreatedBy', 'System.AssignedTo'];
+  async function loadRecent(force) {
+    const key = `${R.days}|${S.project}`;
+    if (!force && R.key === key) { renderRecent(); return; }
+    R.loading = true; R.error = ''; renderRecent();
+    try {
+      const ids = await wiql(`SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.CreatedDate] >= @Today - ${R.days - 1} AND ([System.CreatedBy] = @Me OR [System.AssignedTo] = @Me) ORDER BY [System.CreatedDate] DESC`, S.project, 200);
+      const out = []; const uniq = [...new Set(ids)];
+      for (let i = 0; i < uniq.length; i += 200) {
+        const j = await api(`/_apis/wit/workitems?ids=${uniq.slice(i, i + 200).join(',')}&fields=${RECENT_FIELDS.join(',')}&errorPolicy=Omit&api-version=7.1`);
+        for (const w of j.value || []) if (w && w.fields) out.push(w);
+      }
+      R.raw = new Map(out.map((w) => [w.id, w]));
+      R.rows = out.map((w) => {
+        const it = toItem(w);
+        const who = (x) => (x && (x.uniqueName || x.displayName) || '');
+        return { ...it, created: new Date(w.fields['System.CreatedDate']), createdBy: who(w.fields['System.CreatedBy']), createdByName: w.fields['System.CreatedBy']?.displayName || '' };
+      }).sort((a, b) => b.created - a.created);
+      R.key = key;
+    } catch (e) { R.error = e.message; }
+    finally { R.loading = false; renderRecent(); }
+  }
+  // Coloca um card da aba "recentes" na lista de trabalho do app (sem fixar), para poder apontar nele
+  function adoptItem(id) {
+    if (S.items.has(id)) return S.items.get(id);
+    const w = R.raw.get(id);
+    if (!w) return null;
+    const it = toItem(w);
+    S.items.set(id, it);
+    return it;
+  }
+  function renderRecent() {
+    const list = $('.list');
+    const f = S.filter.trim().toLowerCase().replace(/^#/, '');
+    if (R.loading && !R.rows.length) { list.innerHTML = '<div class="empty">Buscando cards criados…</div>'; return; }
+    if (R.error) { list.innerHTML = `<div class="empty" style="color:#fca5a5">Não consegui buscar: ${esc(R.error)}</div>`; return; }
+    const rows = R.rows.filter((r) => !f || String(r.id).includes(f) || r.title.toLowerCase().includes(f));
+    if (!rows.length) { list.innerHTML = `<div class="empty">Nenhum card criado por você ou atribuído a você ${R.days === 1 ? 'hoje' : `nos últimos ${R.days} dias`}.</div>`; return; }
+    const today = new Date();
+    const wh = weekHoursByItem();
+    let html = '', lastDay = '';
+    for (const r of rows) {
+      const dk = sameDay(r.created, today) ? 'Hoje' : r.created.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+      if (dk !== lastDay) { html += `<div class="sec">${esc(dk)}</div>`; lastDay = dk; }
+      const mine = (r.createdBy || '').toLowerCase() === S.me.email;
+      const live = S.items.get(r.id);
+      const myH = (live ? live.entries : r.entries).filter(isMine).reduce((a, e) => a + (e.end ? entryHours(e) : 0), 0);
+      html += `<div class="item${S.selectedId === r.id ? ' sel' : ''}" data-id="${r.id}" data-src="recent" title="Clique 2x para apontar horas em #${r.id}">
+        <span class="sw" style="background:${colorOf(r.id)}"></span>
+        <div class="txt"><div class="t">${esc(r.title)}${Date.now() - r.created < 2 * 3600e3 ? '<span class="new">novo</span>' : ''}</div>
+        <div class="m">#${r.id} · ${esc(r.type)} · ${esc(r.state)} · criado ${timeStr(r.created)}${mine ? '' : ` por ${esc(r.createdByName.split(' ')[0])}`}</div></div>
+        ${myH ? `<span class="h" title="Suas horas neste card">${fmtH(myH)}</span>` : ''}
+        <span class="acts">
+          <button data-act="timer" data-id="${r.id}" title="Iniciar no cronômetro">▶</button>
+          <a href="https://dev.azure.com/${encodeURIComponent(S.org)}/${encodeURIComponent(r.project)}/_workitems/edit/${r.id}" target="_blank" rel="noopener" title="Abrir no Azure"><button tabindex="-1">↗</button></a>
+        </span></div>`;
+    }
+    if (R.loading) html += '<div class="empty">Atualizando…</div>';
+    list.innerHTML = html;
+  }
+  function setSide(v) {
+    S.side = v;
+    document.querySelectorAll('.side-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.act === `side-${v}`));
+    $('.range').style.display = v === 'recent' ? 'flex' : 'none';
+    $('.q').placeholder = v === 'recent' ? 'Filtrar recentes por #ID ou título…' : 'Filtrar, #ID ou título…';
+    if (v === 'recent') loadRecent(true); else renderList();
+  }
+  // Clique duplo num card (qualquer aba) abre a tela de apontamento já com ele
+  function quickLog(id) {
+    const it = adoptItem(id) || S.items.get(id);
+    if (!it) return;
+    const now = truncMin(new Date());
+    now.setMinutes(Math.floor(now.getMinutes() / SNAP_MIN) * SNAP_MIN);
+    S.selectedId = id;
+    openSessionDialog({ itemId: id, start: new Date(now.getTime() - 3600e3), end: now });
+  }
+
+  function renderRunning() {
+    const box = $('.running-box');
+    const r = S.me && runningEntry();
+    box.classList.toggle('on', !!r);
+    if (!r) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span style="color:#f31260">●</span>
+      <div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">#${r.it.id} ${esc(r.it.title)}</div>
+      <div style="color:#8b93a3;font-size:11px">desde ${timeStr(new Date(r.e.start))} · ${fmtH(entryHours(r.e))}</div></div>
+      <button class="primary" data-act="stop" data-id="${r.it.id}" data-eid="${esc(r.e.id)}">■ Parar</button></div>`;
+  }
+  function visibleRange() {
+    let a = prefs.dayStart, b = prefs.dayEnd;
+    for (const s of weekSegments()) {
+      a = Math.min(a, s.a.getHours());
+      b = Math.max(b, s.b.getHours() + (s.b.getMinutes() > 0 ? 1 : 0) || 24);
+    }
+    return [Math.max(0, a), Math.min(24, Math.max(b, a + 1))];
+  }
+  function renderCalendar() {
+    const [h0, h1] = visibleRange();
+    const today = new Date();
+    const segs = weekSegments();
+    const perDay = Array.from({ length: 7 }, () => 0);
+    for (const s of segs) perDay[s.day] += s.hours;
+    let head = '<div></div>';
+    for (let d = 0; d < 7; d++) {
+      const day = addDays(S.weekStart, d);
+      const pct = Math.min(100, (100 * perDay[d]) / prefs.dailyGoal);
+      head += `<div class="dh${sameDay(day, today) ? ' today' : ''}${d >= 5 ? ' we' : ''}">
+        <div class="n">${DAY_NAMES[d]} ${pad(day.getDate())}/${pad(day.getMonth() + 1)}</div>
+        <div class="tot"><span>${fmtH(perDay[d])}</span><span>${d < 5 && perDay[d] < prefs.dailyGoal ? `faltam ${fmtH(prefs.dailyGoal - perDay[d])}` : ''}</span></div>
+        ${d < 5 ? `<div class="mini${perDay[d] < prefs.dailyGoal ? ' low' : ''}"><i style="width:${pct}%"></i></div>` : ''}</div>`;
+    }
+    $('.cal-head').innerHTML = head;
+
+    const height = (h1 - h0) * PX_PER_HOUR;
+    let gutter = `<div class="gutter" style="height:${height}px">`;
+    for (let h = h0 + 1; h < h1; h++) gutter += `<span style="top:${(h - h0) * PX_PER_HOUR}px">${pad(h)}:00</span>`;
+    gutter += '</div>';
+    let cols = '';
+    for (let d = 0; d < 7; d++) {
+      const day = addDays(S.weekStart, d);
+      let inner = '';
+      for (let h = h0; h < h1; h++) {
+        inner += `<div class="hl" style="top:${(h - h0) * PX_PER_HOUR}px"></div><div class="hl half" style="top:${(h - h0 + 0.5) * PX_PER_HOUR}px"></div>`;
+      }
+      if (sameDay(day, today)) {
+        const mins = today.getHours() * 60 + today.getMinutes() - h0 * 60;
+        if (mins >= 0 && mins <= (h1 - h0) * 60) inner += `<div class="now" style="top:${(mins * PX_PER_HOUR) / 60}px"></div>`;
+      }
+      for (const s of segs.filter((x) => x.day === d)) {
+        const top = ((s.a.getHours() * 60 + s.a.getMinutes() - h0 * 60) * PX_PER_HOUR) / 60;
+        const endMin = sameDay(s.a, s.b) ? s.b.getHours() * 60 + s.b.getMinutes() : 24 * 60;
+        const hgt = Math.max(14, ((endMin - (s.a.getHours() * 60 + s.a.getMinutes())) * PX_PER_HOUR) / 60 - 2);
+        const realEnd = s.e.end ? timeStr(new Date(s.e.end)) : 'agora';
+        inner += `<div class="blk${s.e.end ? '' : ' run'}" data-id="${s.it.id}" data-eid="${esc(s.e.id)}" style="top:${top}px;height:${hgt}px;background:${colorOf(s.it.id)}"
+          title="#${s.it.id} ${esc(s.it.title)}\n${timeStr(new Date(s.e.start))}–${realEnd} (${fmtH(entryHours(s.e))})${s.e.notes ? '\n' + esc(s.e.notes) : ''}">
+          <b>#${s.it.id} ${esc(s.it.title)}</b>${hgt > 26 ? `${timeStr(s.a)}–${s.e.end ? timeStr(s.b) : 'agora'} · ${fmtH(s.hours)}` : ''}</div>`;
+      }
+      cols += `<div class="col${d >= 5 ? ' we' : ''}${sameDay(day, today) ? ' today' : ''}" data-day="${d}" style="height:${height}px">${inner}</div>`;
+    }
+    const grid = $('.grid');
+    grid.dataset.h0 = h0; grid.dataset.h1 = h1;
+    grid.innerHTML = gutter + cols;
+  }
+
+
+  // ───────── Produtividade: cards fechados com horas suas ─────────
+  // Regra: conta o card se ele está fechado (Closed/Done/Resolved) e tem pelo menos uma sessão sua com horas.
+  // O dia em que ele conta é o dia em que foi fechado (ClosedDate).
+  const PROD_FIELDS = ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.TeamProject', 'System.AssignedTo', 'Microsoft.VSTS.Common.ClosedDate', 'Microsoft.VSTS.Common.ClosedBy', F_WS];
+  const CLOSED_RE = /^(Closed|Done|Resolved)$/i;
+  const monthStart = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
+  const dayKey = (d) => dateInput(d);
+  const P = { month: monthStart(new Date()), rows: [], loadedKey: '', loading: false, selDay: null, error: '' };
+  function weekdaysIn(a, b) { let n = 0; for (let d = new Date(a); d < b; d = addDays(d, 1)) if (d.getDay() % 6 !== 0) n++; return n; }
+  const ymdW = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  async function getItemsWith(ids, fields) {
+    const out = []; const uniq = [...new Set(ids.map(Number))].filter(Boolean);
+    for (let i = 0; i < uniq.length; i += 200) {
+      const j = await api(`/_apis/wit/workitems?ids=${uniq.slice(i, i + 200).join(',')}&fields=${fields.join(',')}&errorPolicy=Omit&api-version=7.1`);
+      for (const w of j.value || []) if (w && w.fields) out.push(w);
+    }
+    return out;
+  }
+  function prodRange() {
+    const m0 = P.month, m1 = new Date(m0.getFullYear(), m0.getMonth() + 1, 1);
+    const w0 = startOfWeek(new Date()), w1 = addDays(w0, 7);
+    return { from: m0 < w0 ? m0 : w0, to: m1 > w1 ? m1 : w1, m0, m1 };
+  }
+  async function loadProd(force) {
+    const { from, to } = prodRange();
+    const key = `${from.toISOString()}|${to.toISOString()}`;
+    if (!force && P.loadedKey === key) { renderProd(); return; }
+    P.loading = true; P.error = ''; renderProd();
+    try {
+      const q = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [Microsoft.VSTS.Common.ClosedDate] >= '${ymdW(addDays(from, -1))}' AND [Microsoft.VSTS.Common.ClosedDate] < '${ymdW(addDays(to, 1))}' AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me OR [Microsoft.VSTS.Common.ClosedBy] = @Me)`;
+      let ids = [];
+      try { ids = await wiql(q, S.project, 2000); }
+      catch (e) { if (e.status === 401) throw e; ids = await wiql(q.replace(' OR [System.AssignedTo] EVER @Me', ''), S.project, 2000); }
+      // Também os itens onde você tem sessões (podem ter sido fechados por outra pessoa)
+      const withMine = [...S.items.values()].filter((it) => it.entries.some(isMine)).map((it) => it.id);
+      const all = await getItemsWith([...ids, ...withMine, ...(S.hubIds || [])], PROD_FIELDS);
+      P.rows = all.map((w) => {
+        const f = w.fields;
+        const entries = (parseEntries(f[F_WS]) || []).filter((e) => isMine(e) && e.start && e.end);
+        const closed = f['Microsoft.VSTS.Common.ClosedDate'] && CLOSED_RE.test(f['System.State'] || '') ? new Date(f['Microsoft.VSTS.Common.ClosedDate']) : null;
+        const who = (x) => (x && (x.uniqueName || x.displayName) || '').toLowerCase();
+        return {
+          id: w.id, title: f['System.Title'] || `#${w.id}`, type: f['System.WorkItemType'] || '', state: f['System.State'] || '',
+          project: f['System.TeamProject'] || S.project, closed, entries,
+          myHours: entries.reduce((a, e) => a + entryHours(e), 0),
+          mineToClose: who(f['Microsoft.VSTS.Common.ClosedBy']) === S.me.email || who(f['System.AssignedTo']) === S.me.email,
+        };
+      });
+      P.loadedKey = key;
+    } catch (e) { P.error = e.message; }
+    finally { P.loading = false; renderProd(); }
+  }
+  function prodStats(a, b) {
+    const inP = (d) => d && d >= a && d < b;
+    const counted = P.rows.filter((r) => inP(r.closed) && r.myHours > 0);
+    // Horas suas no período: junta as sessões do calendário com as dos cards carregados aqui (sem contar duas vezes)
+    const seen = new Map();
+    for (const { it, e } of myEntries()) seen.set(`${it.id}:${e.id || e.start}`, e);
+    for (const r of P.rows) for (const e of r.entries) seen.set(`${r.id}:${e.id || e.start}`, e);
+    let hours = 0;
+    for (const e of seen.values()) { const s = new Date(e.start); if (e.end && s >= a && s < b) hours += entryHours(e); }
+    return { counted, hours, noHours: P.rows.filter((r) => inP(r.closed) && r.myHours === 0 && r.mineToClose) };
+  }
+  function kpi(label, sub, st, goal) {
+    const n = st.counted.length;
+    const pct = goal ? Math.min(100, (100 * n) / goal) : 0;
+    return `<div class="kpi"><div class="l">${esc(label)} <span class="muted">· ${esc(sub)}</span></div>
+      <div class="v">${n}${goal ? ` <small>/ ${goal}</small>` : ''} <small>card${n === 1 ? '' : 's'}</small></div>
+      <div class="h">${fmtH(st.hours)} apontadas${st.noHours.length ? ` · <span class="warn-h">${st.noHours.length} fechado(s) sem horas</span>` : ''}</div>
+      ${goal ? `<div class="pbar${n < goal ? ' low' : ''}"><i style="width:${pct}%"></i></div>` : ''}</div>`;
+  }
+  function renderProd() {
+    const el = $('.prod');
+    if (S.view !== 'prod') return;
+    const g = prefs.cardGoal || 0;
+    const { m0, m1 } = prodRange();
+    const monthName = m0.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    let html = `<div class="p-nav"><button class="icon" data-act="p-prev">‹</button><span class="mlabel">${esc(monthName[0].toUpperCase() + monthName.slice(1))}</span>
+      <button class="icon" data-act="p-next">›</button><button data-act="p-today">Mês atual</button><span class="grow"></span>
+      <span class="muted">${g ? `Meta: ${g} card${g === 1 ? '' : 's'}/dia` : 'Sem meta de cards: defina em ⚙'}</span></div>`;
+    if (P.loading && !P.rows.length) { el.innerHTML = html + '<div class="muted">Carregando seus cards…</div>'; return; }
+    if (P.error) html += `<div class="p-sec" style="color:#fca5a5">Não consegui carregar: ${esc(P.error)}</div>`;
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    const w0 = startOfWeek(t0);
+    const sToday = prodStats(t0, addDays(t0, 1)), sWeek = prodStats(w0, addDays(w0, 7)), sMonth = prodStats(m0, m1);
+    const isCur = m0.getTime() === monthStart(t0).getTime();
+    html += `<div class="kpis">
+      ${kpi('Hoje', `${pad(t0.getDate())}/${pad(t0.getMonth() + 1)}`, sToday, g)}
+      ${kpi('Semana', `${pad(w0.getDate())}/${pad(w0.getMonth() + 1)} – ${pad(addDays(w0, 6).getDate())}/${pad(addDays(w0, 6).getMonth() + 1)}`, sWeek, g * 5)}
+      ${kpi(isCur ? 'Mês' : 'Mês selecionado', `${weekdaysIn(m0, m1)} dias úteis`, sMonth, g * weekdaysIn(m0, m1))}
+    </div>`;
+    // Gráfico do mês
+    const days = []; for (let d = new Date(m0); d < m1; d = addDays(d, 1)) days.push(new Date(d));
+    const per = days.map((d) => sMonth.counted.filter((r) => sameDay(r.closed, d)).length);
+    const max = Math.max(g || 0, ...per, 1);
+    html += `<div class="chart"><h3>Cards fechados com horas, por dia${P.selDay ? ' · clique de novo no dia para ver o mês todo' : ' · clique num dia para filtrar'}</h3><div class="bars">
+      ${g ? `<div class="goal-line" style="bottom:${(100 * g) / max}%" title="Meta: ${g}/dia"></div>` : ''}
+      ${days.map((d, i) => `<div class="b${d.getDay() % 6 === 0 ? ' we' : ''}${g && per[i] >= g ? ' met' : ''}${P.selDay === dayKey(d) ? ' sel' : ''}" data-act="p-day" data-day="${dayKey(d)}" title="${pad(d.getDate())}/${pad(d.getMonth() + 1)}: ${per[i]} card(s)">
+        ${per[i] ? `<span>${per[i]}</span>` : ''}<i style="height:${(100 * per[i]) / max}%"></i></div>`).join('')}
+      </div><div class="xlab">${days.map((d) => `<span class="${sameDay(d, t0) ? 'today' : ''}">${d.getDate()}</span>`).join('')}</div></div>`;
+    // Lista filtrada
+    let a = m0, b = m1, label = 'no mês';
+    if (P.selDay) { const [y, mo, dd] = P.selDay.split('-').map(Number); a = new Date(y, mo - 1, dd); b = addDays(a, 1); label = `em ${pad(dd)}/${pad(mo)}`; }
+    const st = prodStats(a, b);
+    const rows = st.counted.slice().sort((x, y) => y.closed - x.closed);
+    const link = (r) => `<a href="https://dev.azure.com/${encodeURIComponent(S.org)}/${encodeURIComponent(r.project)}/_workitems/edit/${r.id}" target="_blank" rel="noopener">#${r.id}</a>`;
+    const when = (d) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${timeStr(d)}`;
+    html += `<div class="p-sec"><h3>✅ Cards contabilizados ${esc(label)} (${rows.length})</h3>${rows.length ? `<table class="t"><tr><th>Fechado em</th><th>Card</th><th>Título</th><th>Tipo</th><th style="text-align:right">Suas horas</th></tr>
+      ${rows.map((r) => `<tr><td class="num" style="text-align:left">${when(r.closed)}</td><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td class="num">${fmtH(r.myHours)}</td></tr>`).join('')}</table>` : '<div class="muted">Nenhum card fechado com horas suas nesse período.</div>'}</div>`;
+    if (st.noHours.length) {
+      html += `<div class="p-sec"><h3 class="warn-h">⚠ Fechados ${esc(label)} sem horas suas (${st.noHours.length}): não contam até você apontar</h3><table class="t"><tr><th>Fechado em</th><th>Card</th><th>Título</th><th>Tipo</th><th></th></tr>
+        ${st.noHours.sort((x, y) => y.closed - x.closed).map((r) => `<tr><td class="num" style="text-align:left">${when(r.closed)}</td><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td class="num"><button class="chip-btn" data-act="p-log" data-id="${r.id}">Apontar</button></td></tr>`).join('')}</table></div>`;
+    }
+    const open = P.rows.filter((r) => !r.closed && r.myHours > 0 && !/^Removed$/i.test(r.state)).sort((x, y) => y.myHours - x.myHours);
+    if (open.length) {
+      html += `<div class="p-sec"><h3>⏳ Com horas suas, ainda abertos (${open.length}): contam quando forem fechados</h3><table class="t"><tr><th>Card</th><th>Título</th><th>Estado</th><th style="text-align:right">Suas horas</th></tr>
+        ${open.map((r) => `<tr><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.state)}</td><td class="num">${fmtH(r.myHours)}</td></tr>`).join('')}</table></div>`;
+    }
+    if (P.loading) html += '<div class="muted">Atualizando…</div>';
+    el.innerHTML = html;
+  }
+
+  // ───────── Cronômetro ─────────
+  // Cada cronômetro guarda trechos (início/fim). Ao apontar, cada trecho vira uma sessão no Work Session Hub.
+  // "Pausar" estaciona o cronômetro num card lateral e libera o principal para outro work item.
+  const T_KEY = 'apontadorHoras.timer.v1';
+  const T = Object.assign({ itemId: null, notes: '', segs: [], parked: [] }, (() => { try { return JSON.parse(localStorage.getItem(T_KEY)) || {}; } catch { return {}; } })());
+  if (!Array.isArray(T.parked)) T.parked = [];
+  const tSave = () => { try { localStorage.setItem(T_KEY, JSON.stringify({ itemId: T.itemId, notes: T.notes, segs: T.segs, parked: T.parked })); } catch { /* ignore */ } };
+  const isRun = (t) => t.segs.length > 0 && !t.segs[t.segs.length - 1].e;
+  const msOf = (t) => t.segs.reduce((a, g) => a + ((g.e ? new Date(g.e) : new Date()) - new Date(g.s)), 0);
+  const tRunning = () => isRun(T);
+  const tMs = () => msOf(T);
+  const tState = () => (tRunning() ? 'run' : T.segs.length ? 'pause' : 'idle');
+  const hms = (ms) => { const t = Math.floor(ms / 1000); return `${pad(Math.floor(t / 3600))}:${pad(Math.floor((t % 3600) / 60))}:${pad(t % 60)}`; };
+  const itemOf = (id) => id && (S.items.get(id) || R.rows.find((r) => r.id === id));
+  // Trechos prontos para gravar: corta no minuto (como a extensão) e junta trechos que encostam
+  function pendingOf(t, closeNow) {
+    const segs = t.segs.map((g) => ({ s: new Date(g.s), e: g.e ? new Date(g.e) : (closeNow ? new Date() : null) })).filter((g) => g.e).sort((x, y) => x.s - y.s);
+    const out = [];
+    for (const g of segs) {
+      const s0 = truncMin(g.s), e0 = truncMin(g.e);
+      if (e0 <= s0) continue;
+      const last = out[out.length - 1];
+      if (last && s0 <= last.e) { if (e0 > last.e) last.e = e0; } else out.push({ s: s0, e: e0 });
+    }
+    return out;
+  }
+  const tPending = (closeNow) => pendingOf(T, closeNow);
+
+  function tStart() {
+    if (!T.itemId) { toast('Informe o work item antes de iniciar.', true); return; }
+    if (tRunning()) return;
+    adoptItem(T.itemId);
+    T.segs.push({ s: new Date().toISOString(), e: null }); tSave(); renderTimer();
+  }
+  // Pausar = fecha o trecho atual e estaciona o cronômetro no painel de pausados
+  function tPark(quiet) {
+    if (!T.segs.length) return false;
+    if (tRunning()) T.segs[T.segs.length - 1].e = new Date().toISOString();
+    const same = T.parked.find((p) => p.itemId === T.itemId);
+    if (same) { same.segs.push(...T.segs); same.notes = T.notes || same.notes; same.pausedAt = new Date().toISOString(); }
+    else T.parked.unshift({ pid: `p${Date.now()}${Math.random().toString(36).slice(2, 6)}`, itemId: T.itemId, notes: T.notes, segs: T.segs, pausedAt: new Date().toISOString() });
+    const id = T.itemId, ms = msOf(same || T.parked[0]);
+    T.segs = []; T.notes = ''; T.itemId = null;
+    tSave(); renderTimer();
+    if (!quiet) toast(`#${id} pausado com ${hms(ms)}. O cronômetro está livre para outro card.`);
+    return true;
+  }
+  function tResume(pid) {
+    const i = T.parked.findIndex((p) => p.pid === pid);
+    if (i < 0) return;
+    const p = T.parked[i];
+    if (T.segs.length) tPark(true); // troca: o card atual vai para os pausados
+    const j = T.parked.findIndex((x) => x.pid === pid);
+    T.parked.splice(j, 1);
+    T.itemId = p.itemId; T.notes = p.notes || ''; T.segs = p.segs;
+    adoptItem(T.itemId);
+    T.segs.push({ s: new Date().toISOString(), e: null });
+    tSave(); renderTimer();
+    toast(`Retomado #${p.itemId} a partir de ${hms(msOf(T))}.`);
+  }
+  // Grava os trechos de um cronômetro no Azure. keepRunning: continua contando a partir de agora.
+  async function logTimer(t, keepRunning) {
+    if (!t.itemId) { toast('Informe o work item.', true); return false; }
+    const wasRunning = isRun(t);
+    const cut = new Date();
+    if (wasRunning) t.segs[t.segs.length - 1].e = cut.toISOString();
+    const items = pendingOf(t, false);
+    if (!items.length) {
+      toast('Menos de 1 minuto contado: nada para apontar ainda.', true);
+      if (wasRunning) t.segs[t.segs.length - 1].e = null;
+      tSave(); renderTimer(); return false;
+    }
+    const it = adoptItem(t.itemId) || await ensureItem(t.itemId);
+    if (!it) { toast(`Item #${t.itemId} não encontrado.`, true); if (wasRunning) t.segs[t.segs.length - 1].e = null; return false; }
+    let done = 0;
+    const ok = await run(prefs.dryRun ? 'Validando…' : `Apontando ${items.length} trecho(s) em #${t.itemId}…`, async () => {
+      for (const g of items) { await createSession({ itemId: t.itemId, start: g.s, end: g.e, notes: t.notes }); done++; }
+    });
+    const total = items.reduce((a, g) => a + (g.e - g.s), 0) / 36e5;
+    if (ok && !prefs.dryRun) {
+      t.segs = keepRunning && wasRunning ? [{ s: cut.toISOString(), e: null }] : [];
+      P.loadedKey = '';
+      toast(`${fmtH(total)} apontadas em #${t.itemId}${keepRunning && wasRunning ? ' · cronômetro continua' : ''}.`);
+    } else if (ok) {
+      if (wasRunning && keepRunning) t.segs[t.segs.length - 1].e = null;
+      toast('Modo teste: o Azure aceitou, nada foi gravado.');
+    } else {
+      if (done) { const keepFrom = items[done].s; t.segs = t.segs.filter((g) => !g.e || new Date(g.e) > keepFrom).map((g) => (new Date(g.s) < keepFrom ? { ...g, s: keepFrom.toISOString() } : g)); }
+      if (keepRunning && wasRunning) t.segs.push({ s: cut.toISOString(), e: null });
+    }
+    tSave(); renderTimer();
+    return ok && !prefs.dryRun;
+  }
+  async function tLog(keepRunning) {
+    const ok = await logTimer(T, keepRunning);
+    if (ok && !keepRunning) { T.notes = ''; tSave(); renderTimer(); }
+  }
+  async function parkedLog(pid) {
+    const p = T.parked.find((x) => x.pid === pid);
+    if (!p) return;
+    const ok = await logTimer(p, false);
+    if (ok && !p.segs.length) { T.parked = T.parked.filter((x) => x.pid !== pid); tSave(); renderTimer(); }
+  }
+  function tDiscard() { T.segs = []; tSave(); renderTimer(); toast('Cronômetro zerado, nada foi apontado.'); }
+  function parkedDiscard(pid) { T.parked = T.parked.filter((x) => x.pid !== pid); tSave(); renderTimer(); toast('Card pausado descartado, nada foi apontado.'); }
+  function tSetItem(id) {
+    if (T.segs.length && id !== T.itemId) { toast('Pause, aponte ou descarte o tempo atual antes de trocar o card.', true); return false; }
+    T.itemId = id; tSave(); return true;
+  }
+  // ▶ das listas: leva o card para o cronômetro (pausando o que estiver rodando) e já inicia
+  function timerFor(id) {
+    adoptItem(id);
+    setView('timer');
+    if (T.itemId === id && T.segs.length) { if (!tRunning()) tStart(); return; }
+    const parked = T.parked.find((p) => p.itemId === id);
+    if (parked) { tResume(parked.pid); return; }
+    if (T.segs.length) tPark(false);
+    T.itemId = id; tSave(); tStart();
+  }
+
+  // Editar os trechos de um card pausado (ou do principal, se não estiver rodando)
+  function openSegEditor(pid) {
+    const t = pid === 'main' ? T : T.parked.find((x) => x.pid === pid);
+    if (!t) return;
+    if (isRun(t)) { toast('Pause antes de editar as horas.', true); return; }
+    // Mostra os trechos já cortados no minuto e juntados (descarta pedaços de segundos)
+    let rows = pendingOf(t, false).map((g) => ({ s: g.s, e: g.e }));
+    const it = itemOf(t.itemId);
+    const m = $('.modal');
+    const draw = () => {
+      m.innerHTML = `<h2>Editar horas · #${t.itemId}${it ? ` ${esc(it.title)}` : ''}</h2>
+        <p style="font-size:12px">Cada linha é um trecho trabalhado. Ajuste os horários, remova ou adicione trechos.</p>
+        <div class="segs-ed">${rows.map((r, i) => `<div class="row" data-i="${i}" style="align-items:flex-end">
+          <label>Data<input type="date" class="e-d" value="${dateInput(r.s)}"></label>
+          <label>Início<input type="time" class="e-s" value="${timeStr(r.s)}"></label>
+          <label>Fim<input type="time" class="e-e" value="${timeStr(r.e)}"></label>
+          <button class="danger e-del" title="Remover trecho" style="margin-bottom:1px">🗑</button></div>`).join('') || '<div class="muted">Nenhum trecho.</div>'}</div>
+        <div><button class="e-add">＋ Adicionar trecho</button></div>
+        <div class="e-tot muted" style="font-size:12px"></div>
+        <label>Notas<input class="e-notes" maxlength="300" value="${esc(t.notes || '')}"></label>
+        <div class="err"></div>
+        <div class="foot"><span class="grow"></span><button class="e-cancel">Cancelar</button><button class="primary e-save">Salvar</button></div>`;
+      const readRows = () => [...m.querySelectorAll('.segs-ed .row')].map((row) => {
+        const d = row.querySelector('.e-d').value, a = row.querySelector('.e-s').value, b = row.querySelector('.e-e').value;
+        if (!d || !a || !b) return null;
+        const s = combine(d, a); let e = combine(d, b);
+        if (e.getTime() === s.getTime()) return { s, e, zero: true };
+        if (e < s) e = addDays(e, 1); // passou da meia-noite
+        return { s, e };
+      });
+      const showTot = () => { const r = readRows(); m.querySelector('.e-tot').textContent = r.some((x) => !x) ? '' : `Total: ${fmtH(r.reduce((a, x) => a + (x.e - x.s), 0) / 36e5)}`; };
+      showTot();
+      m.oninput = showTot;
+      m.querySelectorAll('.e-del').forEach((b) => b.addEventListener('click', () => { const keep = readRows(); keep.splice(Number(b.closest('.row').dataset.i), 1); rows = keep.filter(Boolean); draw(); }));
+      m.querySelector('.e-add').addEventListener('click', () => {
+        const cur = readRows().filter(Boolean);
+        const last = cur.length ? cur[cur.length - 1].e : truncMin(new Date(Date.now() - 30 * 60e3));
+        rows = [...cur, { s: last, e: new Date(last.getTime() + 30 * 60e3) }]; draw();
+      });
+      m.querySelector('.e-cancel').addEventListener('click', closeModal);
+      m.querySelector('.e-save').addEventListener('click', () => {
+        const r = readRows();
+        if (r.some((x) => !x)) { m.querySelector('.err').textContent = 'Preencha data, início e fim de todos os trechos.'; return; }
+        if (r.some((x) => x.zero)) { m.querySelector('.err').textContent = 'Há trecho com início igual ao fim. Ajuste ou remova.'; return; }
+        r.sort((x, y) => x.s - y.s);
+        for (let i = 1; i < r.length; i++) if (r[i].s < r[i - 1].e) { m.querySelector('.err').textContent = `Os trechos ${timeStr(r[i - 1].s)}–${timeStr(r[i - 1].e)} e ${timeStr(r[i].s)}–${timeStr(r[i].e)} se sobrepõem.`; return; }
+        if (r.some((x) => (x.e - x.s) / 36e5 > 12)) { m.querySelector('.err').textContent = 'Algum trecho tem mais de 12h. Confira.'; return; }
+        if (r.some((x) => x.e > new Date())) { m.querySelector('.err').textContent = 'Há trecho terminando no futuro.'; return; }
+        t.segs = r.map((x) => ({ s: x.s.toISOString(), e: x.e.toISOString() }));
+        t.notes = m.querySelector('.e-notes').value.trim();
+        if (t !== T && !t.segs.length) T.parked = T.parked.filter((x) => x !== t);
+        tSave(); closeModal(); renderTimer(); toast('Horas ajustadas.');
+      });
+    };
+    draw();
+    $('.modal-bg').classList.add('on');
+  }
+
+  function renderTimerBadge() {
+    const dot = document.querySelector('.tdot');
+    if (!dot) return;
+    const st = tState();
+    dot.classList.toggle('on', st !== 'idle' || T.parked.length > 0);
+    dot.classList.toggle('paused', st !== 'run');
+    dot.title = `${st === 'run' ? 'Rodando' : st === 'pause' ? 'Parado com tempo' : ''}${T.parked.length ? ` · ${T.parked.length} pausado(s)` : ''}`;
+  }
+  function renderTimer() {
+    renderTimerBadge();
+    const el = $('.timerv');
+    if (S.view !== 'timer') return;
+    const st = tState();
+    const it = itemOf(T.itemId);
+    const label = it ? `${it.id} — ${it.title}` : (T.itemId ? String(T.itemId) : '');
+    const opts = [...S.items.values()].sort((a, b) => b.id - a.id).map((x) => `<option value="${esc(`${x.id} — ${x.title}`)}"></option>`).join('');
+    const pend = tPending(st === 'run');
+    const todayMine = it ? (S.items.get(it.id)?.entries || []).filter((e) => isMine(e) && e.end && sameDay(new Date(e.start), new Date())).reduce((a, e) => a + entryHours(e), 0) : 0;
+    const lock = T.segs.length > 0;
+    const parked = T.parked.map((p) => {
+      const pi = itemOf(p.itemId);
+      const pp = pendingOf(p, false);
+      return `<div class="pk" data-pid="${p.pid}">
+        <div class="pk-h"><span class="sw" style="background:${colorOf(p.itemId)}"></span><b>#${p.itemId}</b> <span class="pk-t">${esc(pi ? pi.title : '')}</span></div>
+        <div class="pk-c">${hms(msOf(p))}</div>
+        <div class="muted" style="font-size:11.5px">pausado às ${timeStr(new Date(p.pausedAt))} · ${pp.length} trecho(s)${p.notes ? ` · ${esc(p.notes)}` : ''}</div>
+        <div class="pk-b">
+          <button class="go" data-act="pk-resume" data-pid="${p.pid}">▶ Retomar</button>
+          <button data-act="pk-edit" data-pid="${p.pid}">✎ Editar</button>
+          <button class="ap" data-act="pk-log" data-pid="${p.pid}">⤴ Apontar</button>
+          <button data-act="pk-discard" data-pid="${p.pid}" title="Descartar sem apontar">✕</button>
+        </div></div>`;
+    }).join('');
+    el.innerHTML = `<div class="tlay"><div class="tw">
+      <div class="tcard">
+        <label>Work item${lock ? ' <span class="muted">(pause, aponte ou descarte para trocar)</span>' : ''}
+          <input class="t-item" list="t-items" autocomplete="off" placeholder="Digite o número, ex.: 787869" value="${esc(label)}" ${lock ? 'disabled' : ''}></label>
+        <datalist id="t-items">${opts}</datalist>
+        <div class="t-info" style="font-size:12px;margin-top:4px;color:#8b93a3">${it ? `✓ ${esc(it.title)} · ${esc(it.type)} · ${esc(it.state)}${todayMine ? ` · você já apontou ${fmtH(todayMine)} hoje neste card` : ''}` : ''}</div>
+        <label style="margin-top:10px">Notas (opcional)<input class="t-notes" maxlength="300" placeholder="O que você está fazendo" value="${esc(T.notes)}"></label>
+      </div>
+      <div class="tcard">
+        <div class="clock ${st === 'run' ? 'run' : st === 'pause' ? 'pause' : ''}">${hms(tMs())}</div>
+        <div class="tstate">${st === 'run' ? `Rodando desde ${timeStr(new Date(T.segs[T.segs.length - 1].s))}` : st === 'pause' ? 'Parado com tempo não apontado' : 'Parado'}${pend.length ? ` · ${pend.length} trecho(s) a apontar` : ''}${prefs.dryRun ? ' · <span style="color:#fde68a">modo teste</span>' : ''}</div>
+        <div class="tbtns">
+          ${st === 'run' ? '<button class="pz" data-act="t-pause" title="Guarda este card nos pausados e libera o cronômetro">⏸ Pausar</button>' : `<button class="go" data-act="t-start" ${T.itemId ? '' : 'disabled'}>▶ ${st === 'pause' ? 'Retomar' : 'Iniciar'}</button>`}
+          <button class="ap" data-act="t-log" ${st === 'idle' ? 'disabled' : ''} title="Grava o tempo até agora e continua contando">⤴ Apontar</button>
+          <button class="st" data-act="t-stop" ${st === 'idle' ? 'disabled' : ''} title="Para e grava tudo no Work Session Hub">■ Parar/Apontar</button>
+          <button data-act="t-discard" ${st === 'idle' ? 'disabled' : ''} title="Zera sem apontar">✕ Descartar</button>
+        </div>
+        ${st === 'pause' ? '<div style="text-align:center;margin-top:8px"><button class="tlink" data-act="t-edit">✎ Editar horas</button> · <button class="tlink" data-act="t-pause">mandar para os pausados</button></div>' : ''}
+      </div>
+      ${pend.length ? `<div class="tcard"><h3 style="margin:0 0 6px;font-size:13px">Trechos que serão apontados</h3>
+        ${pend.map((g, i) => `<div class="seg"><span>${pad(g.s.getDate())}/${pad(g.s.getMonth() + 1)} · ${timeStr(g.s)} – ${timeStr(g.e)}${st === 'run' && i === pend.length - 1 ? ' <span class="muted">(até agora)</span>' : ''}</span><span>${fmtH((g.e - g.s) / 36e5)}</span></div>`).join('')}
+        <div class="muted" style="font-size:11.5px;margin-top:6px">Os horários são cortados no minuto, como no Work Session Hub. Cada trecho vira uma sessão.</div></div>` : ''}
+    </div>
+    <div class="parked"><h3>⏸ Pausados${T.parked.length ? ` (${T.parked.length})` : ''}</h3>
+      ${parked || '<div class="muted" style="font-size:12px">Ao clicar em Pausar, o card vem para cá com o tempo guardado. Você pode iniciar outro card e voltar depois.</div>'}
+    </div></div>`;
+    const inp = el.querySelector('.t-item');
+    let seq = 0, tmr = null;
+    inp.addEventListener('input', () => {
+      const id = parseItemId(inp.value); const info = el.querySelector('.t-info');
+      clearTimeout(tmr);
+      if (!id) { T.itemId = null; tSave(); info.textContent = ''; el.querySelector('[data-act="t-start"]')?.setAttribute('disabled', ''); return; }
+      const known = itemOf(id);
+      if (known) { tSetItem(id); info.textContent = `✓ ${known.title} · ${known.type} · ${known.state}`; el.querySelector('[data-act="t-start"]')?.removeAttribute('disabled'); return; }
+      info.textContent = `Procurando #${id}…`; const my = ++seq;
+      tmr = setTimeout(async () => {
+        try {
+          const x = await ensureItem(id); if (my !== seq) return;
+          if (x) { tSetItem(id); info.textContent = `✓ ${x.title} · ${x.type} · ${x.state}`; el.querySelector('[data-act="t-start"]')?.removeAttribute('disabled'); }
+          else info.textContent = `Item #${id} não encontrado no Azure.`;
+        } catch (e) { info.textContent = e.message; }
+      }, 400);
+    });
+    el.querySelector('.t-notes').addEventListener('input', (e) => { T.notes = e.target.value; tSave(); });
+  }
+  // Atualiza o relógio a cada segundo (só o número, sem redesenhar a tela)
+  setInterval(() => {
+    renderTimerBadge();
+    if (tState() === 'idle') { if (/^[⏱⏸]/.test(document.title)) document.title = 'Apontador de Horas'; return; }
+    const c = document.querySelector('.timerv.on .clock');
+    if (c) c.textContent = hms(tMs());
+    document.title = `${tState() === 'run' ? '⏱' : '⏸'} ${hms(tMs())} · #${T.itemId} · Apontador`;
+  }, 1000);
+
+  function setView(v) {
+    S.view = v;
+    document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.act === `view-${v}`));
+    $('.body').classList.toggle('off', v !== 'cal');
+    $('.prod').classList.toggle('on', v === 'prod');
+    $('.timerv').classList.toggle('on', v === 'timer');
+    $('.st-left').textContent = v === 'prod'
+      ? 'Conta como feito: card fechado e com horas suas apontadas. O dia é o dia do fechamento.'
+      : v === 'timer' ? 'Apontar grava o tempo até agora e continua contando · Parar/Apontar grava tudo e zera. O cronômetro continua salvo se você fechar o app.'
+      : 'Arraste no calendário para criar uma sessão · clique numa sessão para editar';
+    if (v === 'prod') loadProd(true);
+    if (v === 'timer') renderTimer();
+  }
+
+  // ───────── Interações ─────────
+  async function reload(scrollToNow) {
+    const ok = await run('Carregando suas sessões…', loadAll);
+    if (ok && scrollToNow) {
+      const h0 = Number($('.grid').dataset.h0 || 0);
+      $('.scroller').scrollTop = Math.max(0, (new Date().getHours() - h0 - 3) * PX_PER_HOUR);
+    }
+  }
+
+  $('.q').addEventListener('input', (ev) => { S.filter = ev.target.value; renderList(); });
+  $('.q').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { if (S.side === 'recent') loadRecent(true); else searchAzure(); } });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && $('.modal-bg').classList.contains('on') && S.me) closeModal(); });
+
+  async function searchAzure() {
+    const q = S.filter.trim().replace(/^#/, '');
+    if (!q) return;
+    await run('Buscando no Azure…', async () => {
+      let ids;
+      if (/^\d+$/.test(q)) ids = [Number(q)];
+      else ids = await wiql(`SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.Title] CONTAINS '${q.replace(/'/g, "''")}' ORDER BY [System.ChangedDate] DESC`, S.project, 30);
+      const found = await getItems(ids);
+      if (!found.length) throw new Error('Nenhum item encontrado.');
+      for (const w of found) {
+        S.items.set(w.id, toItem(w));
+        if (!prefs.pinned.includes(w.id)) prefs.pinned.push(w.id);
+      }
+      savePrefs();
+      if (found.length === 1) S.selectedId = found[0].id;
+      toast(`${found.length} item(ns) adicionado(s) aos fixados.`);
+    });
+  }
+
+  document.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('[data-act]');
+    const itemEl = ev.target.closest('.item');
+    const blk = ev.target.closest('.blk');
+    if (btn) {
+      const act = btn.dataset.act, id = Number(btn.dataset.id);
+      ev.stopPropagation();
+      if (!S.me && act !== 'settings') return;
+      if (act === 'prev') { S.weekStart = addDays(S.weekStart, -7); render(); }
+      else if (act === 'next') { S.weekStart = addDays(S.weekStart, 7); render(); }
+      else if (act === 'today') { S.weekStart = startOfWeek(new Date()); render(); }
+      else if (act === 'reload') { await reload(false); if (S.view === 'prod') loadProd(true); if (S.side === 'recent') loadRecent(true); }
+      else if (act === 'settings') openSettings();
+      else if (act === 'side-mine' || act === 'side-recent') setSide(act === 'side-mine' ? 'mine' : 'recent');
+      else if (act === 'r-days') { R.days = Number(btn.dataset.days); document.querySelectorAll('.range button').forEach((b) => b.classList.toggle('on', b === btn)); loadRecent(true); }
+      else if (act === 'view-cal' || act === 'view-prod' || act === 'view-timer') setView(act.slice(5));
+      else if (act === 'p-prev' || act === 'p-next') { P.month = new Date(P.month.getFullYear(), P.month.getMonth() + (act === 'p-prev' ? -1 : 1), 1); P.selDay = null; loadProd(); }
+      else if (act === 'p-today') { P.month = monthStart(new Date()); P.selDay = null; loadProd(); }
+      else if (act === 'p-day') { const k = btn.dataset.day; P.selDay = P.selDay === k ? null : k; renderProd(); }
+      else if (act === 'p-log') { const it = P.rows.find((r) => r.id === id); if (it) { const ensure = await ensureItem(id); const end = it.closed ? truncMin(it.closed) : truncMin(new Date()); openSessionDialog({ itemId: ensure ? ensure.id : id, start: new Date(end.getTime() - 3600e3), end }); } }
+      else if (act === 'search') { if (S.side === 'recent') loadRecent(true); else searchAzure(); }
+      else if (act === 'new') {
+        const now = truncMin(new Date());
+        now.setMinutes(Math.floor(now.getMinutes() / SNAP_MIN) * SNAP_MIN);
+        openSessionDialog({ itemId: S.selectedId, start: new Date(now.getTime() - 3600e3), end: now });
+      }
+      else if (act === 'pin') {
+        prefs.pinned = prefs.pinned.includes(id) ? prefs.pinned.filter((x) => x !== id) : [...prefs.pinned, id];
+        savePrefs(); renderList();
+      }
+      else if (act === 'timer') timerFor(id);
+      else if (act === 't-start') tStart();
+      else if (act === 't-pause') tPark(false);
+      else if (act === 't-edit') openSegEditor('main');
+      else if (act === 'pk-resume') tResume(btn.dataset.pid);
+      else if (act === 'pk-edit') openSegEditor(btn.dataset.pid);
+      else if (act === 'pk-log') parkedLog(btn.dataset.pid);
+      else if (act === 'pk-discard') { if (btn.dataset.confirm) parkedDiscard(btn.dataset.pid); else { btn.dataset.confirm = '1'; btn.textContent = 'Confirmar?'; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.confirm; btn.textContent = '✕'; } }, 4000); } }
+      else if (act === 't-log') tLog(true);
+      else if (act === 't-stop') tLog(false);
+      else if (act === 't-discard') { if (btn.dataset.confirm) tDiscard(); else { btn.dataset.confirm = '1'; btn.textContent = 'Confirmar?'; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.confirm; btn.textContent = '✕ Descartar'; } }, 4000); } }
+      else if (act === 'stop') stopTimer(id, btn.dataset.eid);
+      return;
+    }
+    if (itemEl && !ev.target.closest('a')) {
+      // Só troca a classe (sem redesenhar a lista), para o clique duplo funcionar no mesmo elemento
+      const id = Number(itemEl.dataset.id);
+      S.selectedId = S.selectedId === id ? null : id;
+      document.querySelectorAll('.list .item.sel').forEach((e) => e.classList.remove('sel'));
+      if (S.selectedId) itemEl.classList.add('sel');
+      return;
+    }
+    if (blk && !dragJustEnded) {
+      const it = S.items.get(Number(blk.dataset.id));
+      const e = it?.entries.find((x) => x.id === blk.dataset.eid);
+      if (it && e) openSessionDialog({ itemId: it.id, entry: e });
+    }
+  });
+
+  document.addEventListener('dblclick', (ev) => {
+    const itemEl = ev.target.closest('.item');
+    if (!itemEl || ev.target.closest('.acts') || !S.me) return;
+    ev.preventDefault();
+    quickLog(Number(itemEl.dataset.id));
+  });
+
+  async function startTimer(id) {
+    adoptItem(id);
+    if (runningEntry()) { toast('Já existe uma sessão em andamento. Pare-a primeiro.', true); return; }
+    const ok = await run('Iniciando sessão…', () => createSession({ itemId: id, start: new Date() }));
+    if (ok) toast(prefs.dryRun ? 'Modo teste: validado, nada foi gravado.' : `Sessão iniciada em #${id}.`);
+  }
+  async function stopTimer(id, eid) {
+    const it = S.items.get(id);
+    const e = it?.entries.find((x) => x.id === eid);
+    if (!e) return;
+    let end = truncMin(new Date());
+    if (end <= new Date(e.start)) end = new Date(new Date(e.start).getTime() + 60e3);
+    const ok = await run('Encerrando sessão…', () => updateSession(id, eid, { start: new Date(e.start), end, notes: e.notes }));
+    if (ok) toast(prefs.dryRun ? 'Modo teste: validado, nada foi gravado.' : `Sessão encerrada: ${fmtH(entryHours({ start: e.start, end }))}.`);
+  }
+
+  // Arrastar para criar
+  let drag = null, dragJustEnded = false;
+  function yToMinutes(col, clientY) {
+    const r = col.getBoundingClientRect();
+    const h0 = Number($('.grid').dataset.h0);
+    const mins = h0 * 60 + ((clientY - r.top) / PX_PER_HOUR) * 60;
+    return Math.max(0, Math.min(24 * 60, Math.round(mins / SNAP_MIN) * SNAP_MIN));
+  }
+  document.addEventListener('pointerdown', (ev) => {
+    const col = ev.target.closest('.col');
+    if (!col || !S.me || ev.target.closest('.blk') || ev.button !== 0) return;
+    const m = yToMinutes(col, ev.clientY);
+    const ghost = document.createElement('div');
+    ghost.className = 'ghost';
+    col.appendChild(ghost);
+    drag = { col, day: Number(col.dataset.day), m0: m, m1: m, ghost };
+    col.setPointerCapture(ev.pointerId);
+    updateGhost();
+    ev.preventDefault();
+  });
+  document.addEventListener('pointermove', (ev) => {
+    if (!drag) return;
+    drag.m1 = yToMinutes(drag.col, ev.clientY);
+    updateGhost();
+  });
+  document.addEventListener('pointerup', () => {
+    if (!drag) return;
+    const { day, ghost } = drag;
+    let a = Math.min(drag.m0, drag.m1), b = Math.max(drag.m0, drag.m1);
+    if (b - a < SNAP_MIN) b = Math.min(24 * 60, a + 60); // clique simples = 1h
+    ghost.remove(); drag = null;
+    dragJustEnded = true; setTimeout(() => (dragJustEnded = false), 50);
+    const d0 = addDays(S.weekStart, day);
+    const start = new Date(d0.getTime()); start.setHours(0, a, 0, 0);
+    const end = new Date(d0.getTime()); end.setHours(0, b, 0, 0);
+    openSessionDialog({ itemId: S.selectedId, start, end });
+  });
+  function updateGhost() {
+    const h0 = Number($('.grid').dataset.h0);
+    const a = Math.min(drag.m0, drag.m1), b = Math.max(drag.m0, drag.m1, a + SNAP_MIN);
+    drag.ghost.style.top = `${((a - h0 * 60) * PX_PER_HOUR) / 60}px`;
+    drag.ghost.style.height = `${((b - a) * PX_PER_HOUR) / 60}px`;
+    const f = (m) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+    drag.ghost.textContent = `${f(a)}–${f(b)} · ${fmtH((b - a) / 60)}`;
+  }
+
+  // ───────── Diálogos ─────────
+  function closeModal() { $('.modal-bg').classList.remove('on'); $('.modal').innerHTML = ''; }
+  function openSessionDialog({ itemId, start, end, entry }) {
+    const editing = !!entry;
+    if (editing) { start = new Date(entry.start); end = entry.end ? new Date(entry.end) : null; }
+    const items = [...S.items.values()].sort((a, b) => b.id - a.id);
+    const label = (it) => `${it.id} — ${it.title}`;
+    const opts = items.map((it) => `<option value="${esc(label(it))}"></option>`).join('');
+    const cur = itemId && S.items.get(itemId);
+    const m = $('.modal');
+    m.innerHTML = `
+      <h2>${editing ? 'Editar sessão' : 'Nova sessão'}</h2>
+      <label>Item (digite o número ou escolha da lista)<input class="f-item" list="ah-items" autocomplete="off" placeholder="Ex.: 787869" value="${cur ? esc(label(cur)) : ''}"></label>
+      <datalist id="ah-items">${opts}</datalist>
+      <div class="f-info" style="font-size:12px;color:#8b93a3;margin-top:-4px"></div>
+      <div class="row">
+        <label>Data<input type="date" class="f-date" value="${dateInput(start)}"></label>
+        <label>Início<input type="time" class="f-start" step="300" value="${timeStr(start)}"></label>
+        <label>Fim<input type="time" class="f-end" step="300" value="${end ? timeStr(end) : ''}" ${end ? '' : 'disabled'}></label>
+      </div>
+      <div class="row" style="align-items:center">
+        <label class="chk"><input type="checkbox" class="f-open" ${end ? '' : 'checked'}> Em andamento (sem fim)</label>
+        <span class="grow"></span>
+        <span class="chips"><button data-dur="30">30m</button><button data-dur="60">1h</button><button data-dur="120">2h</button><button data-dur="240">4h</button></span>
+      </div>
+      <label>Notas<textarea class="f-notes" rows="2" placeholder="Opcional">${esc(entry?.notes || '')}</textarea></label>
+      <div class="dur" style="color:#8b93a3;font-size:12px"></div>
+      <div class="err"></div>
+      <div class="foot">
+        ${editing ? '<button class="danger f-del">Excluir</button>' : ''}
+        <span class="grow"></span>
+        <button class="f-cancel">Cancelar</button>
+        <button class="primary f-save">${prefs.dryRun ? 'Validar (teste)' : 'Salvar'}</button>
+      </div>`;
+    $('.modal-bg').classList.add('on');
+    const q = (s) => m.querySelector(s);
+    const read = () => {
+      const ds = q('.f-date').value, s = q('.f-start').value, e = q('.f-end').value;
+      const open = q('.f-open').checked;
+      if (!ds || !s) return { err: 'Informe data e início.' };
+      const st = combine(ds, s);
+      let en = null;
+      if (!open) {
+        if (!e) return { err: 'Informe o fim ou marque "em andamento".' };
+        en = combine(ds, e);
+        if (en <= st) en = addDays(en, 1); // atravessa meia-noite
+      }
+      return { start: st, end: en, notes: q('.f-notes').value.trim(), itemId: parseItemId(q('.f-item').value) };
+    };
+    const showDur = () => { const r = read(); q('.dur').textContent = r.err ? '' : r.end ? `Duração: ${fmtH((r.end - r.start) / 36e5)}` : 'Sessão em andamento'; };
+    let lookupTimer = null, lookupSeq = 0;
+    const info = (t, color = '#8b93a3') => { q('.f-info').textContent = t; q('.f-info').style.color = color; };
+    const lookup = () => {
+      const id = parseItemId(q('.f-item').value);
+      clearTimeout(lookupTimer);
+      if (!id) { info(q('.f-item').value.trim() ? 'Digite o número do work item.' : ''); return; }
+      const known = S.items.get(id);
+      if (known) { info(`✓ ${known.title} · ${known.type} · ${known.state}`, '#86efac'); return; }
+      info(`Procurando #${id} no Azure…`);
+      const seq = ++lookupSeq;
+      lookupTimer = setTimeout(async () => {
+        try {
+          const it = await ensureItem(id);
+          if (seq !== lookupSeq) return;
+          if (it) info(`✓ ${it.title} · ${it.type} · ${it.state}`, '#86efac');
+          else info(`Item #${id} não encontrado no Azure.`, '#fca5a5');
+        } catch (e) { if (seq === lookupSeq) info(e.message, '#fca5a5'); }
+      }, 400);
+    };
+    q('.f-item').addEventListener('input', lookup);
+    lookup();
+    m.oninput = showDur;
+    q('.f-open').addEventListener('change', () => { q('.f-end').disabled = q('.f-open').checked; if (!q('.f-open').checked && !q('.f-end').value) q('.f-end').value = timeStr(new Date(combine(q('.f-date').value, q('.f-start').value).getTime() + 3600e3)); showDur(); });
+    m.querySelectorAll('[data-dur]').forEach((b) => b.addEventListener('click', () => {
+      const st = combine(q('.f-date').value, q('.f-start').value);
+      q('.f-open').checked = false; q('.f-end').disabled = false;
+      q('.f-end').value = timeStr(new Date(st.getTime() + Number(b.dataset.dur) * 60e3)); showDur();
+    }));
+    showDur();
+    q('.f-cancel').addEventListener('click', closeModal);
+    const save = async () => {
+      const r = read();
+      if (r.err) { q('.err').textContent = r.err; return; }
+      if (!r.itemId) { q('.err').textContent = 'Informe o número do work item.'; return; }
+      if (!S.items.has(r.itemId)) {
+        q('.err').textContent = 'Procurando o item…';
+        let it = null;
+        try { it = await ensureItem(r.itemId); } catch (e) { q('.err').textContent = e.message; return; }
+        if (!it) { q('.err').textContent = `Item #${r.itemId} não encontrado no Azure.`; return; }
+        q('.err').textContent = '';
+      }
+      if (r.end && (r.end - r.start) / 36e5 > 12) { q('.err').textContent = 'Sessão com mais de 12h. Confira os horários.'; return; }
+      if (!r.end && runningEntry() && (!editing || entry.end)) { q('.err').textContent = 'Já existe uma sessão em andamento.'; return; }
+      closeModal();
+      const ok = await run(prefs.dryRun ? 'Validando…' : 'Gravando…', async () => {
+        if (!editing) await createSession(r);
+        else if (r.itemId !== itemId) await moveSession(itemId, entry.id, r.itemId, r);
+        else await updateSession(itemId, entry.id, r);
+      });
+      if (ok) { P.loadedKey = ''; if (S.view === 'prod') loadProd(true); toast(prefs.dryRun ? 'Modo teste: o Azure aceitou a gravação, mas nada foi salvo.' : 'Sessão salva.'); }
+    };
+    q('.f-save').addEventListener('click', save);
+    m.onkeydown = (ev) => { if (ev.key === 'Enter' && ev.target.tagName !== 'TEXTAREA' && ev.target.tagName !== 'BUTTON') { ev.preventDefault(); save(); } };
+    if (editing) {
+      const del = q('.f-del');
+      del.addEventListener('click', async () => {
+        if (!del.classList.contains('confirm')) { del.classList.add('confirm'); del.textContent = 'Confirmar exclusão'; return; }
+        closeModal();
+        const ok = await run(prefs.dryRun ? 'Validando…' : 'Excluindo…', () => deleteSession(itemId, entry.id));
+        if (ok) toast(prefs.dryRun ? 'Modo teste: exclusão validada, nada foi alterado.' : 'Sessão excluída.');
+      });
+    }
+    setTimeout(() => (itemId ? q('.f-start') : q('.f-item')).focus(), 0);
+  }
+
+  function openSettings() {
+    const m = $('.modal');
+    m.innerHTML = `
+      <h2>Configurações</h2>
+      <div class="row">
+        <label>Meta diária (h)<input type="number" min="1" max="24" step="0.5" class="s-goal" value="${prefs.dailyGoal}"></label>
+        <label>Cards fechados por dia<input type="number" min="0" max="50" step="1" class="s-cards" value="${prefs.cardGoal || ''}" placeholder="sem meta"></label>
+        <label>Mostrar a partir de<input type="number" min="0" max="23" class="s-h0" value="${prefs.dayStart}"></label>
+        <label>até<input type="number" min="1" max="24" class="s-h1" value="${prefs.dayEnd}"></label>
+      </div>
+      <label class="chk"><input type="checkbox" class="s-dry" ${prefs.dryRun ? 'checked' : ''}> Modo teste: o Azure valida as gravações, mas nada é salvo</label>
+      <p style="font-size:12px">Conectado como <b>${esc(S.me?.name || '—')}</b> em <code>${esc(S.org)}/${esc(S.project)}</code>.</p>
+      <div class="foot">
+        <button class="s-token">Trocar token / projeto</button>
+        <span class="grow"></span>
+        <button class="s-cancel">Cancelar</button><button class="primary s-save">Salvar</button>
+      </div>`;
+    $('.modal-bg').classList.add('on');
+    m.querySelector('.s-cancel').addEventListener('click', closeModal);
+    m.querySelector('.s-token').addEventListener('click', () => openSetup());
+    m.querySelector('.s-save').addEventListener('click', () => {
+      prefs.dailyGoal = Math.max(1, Number(m.querySelector('.s-goal').value) || 8);
+      prefs.cardGoal = Math.max(0, Math.floor(Number(m.querySelector('.s-cards').value) || 0));
+      prefs.dayStart = Math.max(0, Math.min(23, Number(m.querySelector('.s-h0').value) || 0));
+      prefs.dayEnd = Math.max(prefs.dayStart + 1, Math.min(24, Number(m.querySelector('.s-h1').value) || 24));
+      prefs.dryRun = m.querySelector('.s-dry').checked;
+      savePrefs(); closeModal(); render();
+    });
+  }
+
+  // Primeira configuração: token pessoal do Azure DevOps
+  function openSetup(message) {
+    const m = $('.modal');
+    const tokensUrl = `https://dev.azure.com/${encodeURIComponent(S.org)}/_usersSettings/tokens`;
+    m.innerHTML = `
+      <h2>Conectar ao Azure DevOps</h2>
+      ${message ? `<p style="color:#fca5a5">${esc(message)}</p>` : ''}
+      <p>O app usa um <b>token pessoal (PAT)</b> para ler e gravar suas horas. Ele fica guardado criptografado no seu usuário do Windows.</p>
+      <ol>
+        <li>Abra <a class="tok-link" href="${tokensUrl}" target="_blank" rel="noopener">${esc(tokensUrl)}</a></li>
+        <li>Clique em <b>New Token</b>. Organização: <code>${esc(S.org)}</code>. Validade: até 1 ano (o máximo que a organização permitir).</li>
+        <li>Em <b>Scopes</b>, escolha <b>Custom defined</b>, clique em <b>Show all scopes</b> e marque só <b>Work Items → Read &amp; write</b> e <b>Extension Data → Read &amp; write</b> (esta é para os itens aparecerem no Work Session Hub).</li>
+        <li>Crie, copie o token e cole abaixo.</li>
+      </ol>
+      <div class="row">
+        <label>Organização<input class="c-org" value="${esc(S.org)}"></label>
+        <label>Projeto<input class="c-proj" value="${esc(S.project)}"></label>
+      </div>
+      <label>Token (PAT)<input class="c-pat" type="password" autocomplete="off" placeholder="${S.me ? 'Deixe vazio para manter o atual' : 'Cole aqui'}"></label>
+      <div class="err"></div>
+      <div class="foot">
+        ${S.me ? '<button class="danger c-logout">Desconectar</button><span class="grow"></span><button class="c-cancel">Cancelar</button>' : ''}
+        <button class="primary c-save">Conectar</button>
+      </div>`;
+    $('.modal-bg').classList.add('on');
+    const q = (s) => m.querySelector(s);
+    q('.c-org').addEventListener('input', () => { q('.tok-link').href = `https://dev.azure.com/${encodeURIComponent(q('.c-org').value.trim())}/_usersSettings/tokens`; });
+    const save = async () => {
+      q('.err').textContent = '';
+      q('.c-save').disabled = true; q('.c-save').textContent = 'Verificando…';
+      try {
+        const r = await local('/api/config', { method: 'POST', body: { org: q('.c-org').value, project: q('.c-proj').value, pat: q('.c-pat').value } });
+        const changed = r.org !== S.org || r.project !== S.project;
+        S.me = r.me; S.org = r.org; S.project = r.project;
+        if (changed) { prefs.pinned = []; prefs.known = []; savePrefs(); }
+        closeModal();
+        toast(`Conectado como ${r.me.name}.`);
+        reload(true);
+      } catch (e) {
+        q('.err').textContent = e.message;
+        q('.c-save').disabled = false; q('.c-save').textContent = 'Conectar';
+      }
+    };
+    q('.c-save').addEventListener('click', save);
+    q('.c-pat').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') save(); });
+    if (S.me) {
+      q('.c-cancel').addEventListener('click', closeModal);
+      const lo = q('.c-logout');
+      lo.addEventListener('click', async () => {
+        if (!lo.classList.contains('confirm')) { lo.classList.add('confirm'); lo.textContent = 'Confirmar: apagar token salvo'; return; }
+        await local('/api/logout', { method: 'POST' });
+        S.me = null; S.items = new Map(); render(); openSetup();
+      });
+    }
+    setTimeout(() => q('.c-pat').focus(), 0);
+  }
+
+  // ───────── Início ─────────
+  async function boot() {
+    render();
+    try {
+      const st = await local('/api/status');
+      S.org = st.org; S.project = st.project;
+      if (!st.configured) { openSetup(); return; }
+      S.me = st.me;
+      await reload(true);
+    } catch (e) {
+      toast(e.message, true);
+    }
+  }
+  setInterval(() => { local('/api/ping').catch(() => {}); }, 20e3);
+  // Ao fechar a janela, avisa o app para encerrar (libera o .exe)
+  window.addEventListener('pagehide', () => { try { navigator.sendBeacon('/api/bye?t=' + encodeURIComponent(APP_TOKEN), ''); } catch { /* ignore */ } });
+  setInterval(() => { if (S.me && !S.busy && !drag && !$('.modal-bg').classList.contains('on')) render(); }, 60e3);
+  boot();
+})();
+</script>
+</body>
+</html>
