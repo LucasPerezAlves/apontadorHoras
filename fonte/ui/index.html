@@ -227,6 +227,9 @@
   .muted { color: #8b93a3; }
   .warn-h { color: #fde68a !important; }
   .chip-btn { padding: 2px 8px; font-size: 12px; }
+  .chip-btn.ghost { background: transparent; color: #9aa3b2; }
+  tr.hidrow td { opacity: .55; }
+  .hid-note { font-weight: 400; font-size: 12px; margin-left: 6px; }
   @media (max-width: 1000px) {
     aside { width: 210px; }
     .item .acts { display: none; }
@@ -288,6 +291,9 @@
 
   const prefs = Object.assign({ pinned: [], known: [], dailyGoal: 8, cardGoal: 0, dayStart: 7, dayEnd: 20, dryRun: false }, loadPrefs());
   function loadPrefs() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch { return {}; } }
+  if (!Array.isArray(prefs.closedCats)) prefs.closedCats = ['Resolved', 'Completed'];
+  if (!Array.isArray(prefs.hideTitles)) prefs.hideTitles = ['Code Review', 'Integrated Test'];
+  if (!Array.isArray(prefs.hiddenIds)) prefs.hiddenIds = [];
   function savePrefs() { try { localStorage.setItem(LS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ } }
 
   const S = { me: null, org: 'emr-cm', project: 'EMR', items: new Map(), weekStart: startOfWeek(new Date()), selectedId: null, filter: '', busy: false, view: 'cal', side: 'mine' };
@@ -710,7 +716,7 @@
     const f = S.filter.trim().toLowerCase().replace(/^#/, '');
     const wh = weekHoursByItem();
     const items = [...S.items.values()].filter((it) => !f || String(it.id).includes(f) || it.title.toLowerCase().includes(f));
-    const closed = (it) => /^(Closed|Removed|Done)$/i.test(it.state);
+    const closed = (it) => isClosedState(it.project, it.type, it.state) || isRemovedState(it.project, it.type, it.state);
     const groups = [
       ['Com horas nesta semana', items.filter((it) => wh.has(it.id)).sort((a, b) => wh.get(b.id) - wh.get(a.id))],
       ['Fixados', items.filter((it) => !wh.has(it.id) && prefs.pinned.includes(it.id))],
@@ -884,11 +890,82 @@
   }
 
 
+  // ───────── Estados: o que conta como "fechado" ─────────
+  // Cada processo tem estados próprios (Completed, Accepted, Closed…). Em vez de adivinhar pelo nome, o app lê
+  // a categoria de cada estado no Azure (Proposed / InProgress / Resolved / Completed / Removed) por tipo de item.
+  // Por padrão conta como fechado quem está em "Resolved" ou "Completed"; dá para mudar em ⚙ Configurações.
+  const SCAT = new Map(); // `${projeto}|${tipo}` -> Map(estado em minúsculas -> { name, category })
+  const SCAT_PROJ = new Map(); // projeto -> Promise
+  const CLOSED_FALLBACK = /^(Closed|Done|Resolved|Completed|Accepted)$/i;
+  const CAT_LABEL = { Resolved: 'Resolvido', Completed: 'Concluído' };
+  function ensureStateCats(projects) {
+    return Promise.all([...new Set(projects.filter(Boolean))].map((p) => {
+      if (!SCAT_PROJ.has(p)) {
+        SCAT_PROJ.set(p, (async () => {
+          try {
+            const j = await api(`/${encodeURIComponent(p)}/_apis/wit/workitemtypes?api-version=7.1`);
+            for (const t of j.value || []) {
+              let states = t.states;
+              if (!Array.isArray(states) || !states.length) {
+                try { states = (await api(`/${encodeURIComponent(p)}/_apis/wit/workitemtypes/${encodeURIComponent(t.name)}/states?api-version=7.1`)).value || []; } catch { states = []; }
+              }
+              SCAT.set(`${p}|${t.name}`, new Map(states.map((x) => [String(x.name).toLowerCase(), { name: x.name, category: x.category }])));
+            }
+          } catch (e) { if (e.status === 401) throw e; SCAT_PROJ.delete(p); }
+        })());
+      }
+      return SCAT_PROJ.get(p).catch(() => {});
+    }));
+  }
+  function stateCat(project, type, state) {
+    const k = String(state || '').toLowerCase();
+    const m = SCAT.get(`${project || S.project}|${type || ''}`);
+    if (m && m.has(k)) return m.get(k).category;
+    for (const [key, mm] of SCAT) if (key.startsWith(`${project || S.project}|`) && mm.has(k)) return mm.get(k).category;
+    return null;
+  }
+  function isClosedState(project, type, state) {
+    const c = stateCat(project, type, state);
+    return c ? prefs.closedCats.includes(c) : CLOSED_FALLBACK.test(state || '');
+  }
+  function isRemovedState(project, type, state) {
+    const c = stateCat(project, type, state);
+    return c ? c === 'Removed' : /^Removed$/i.test(state || '');
+  }
+  // Estados conhecidos por categoria, para mostrar ao usuário
+  function statesByCat() {
+    const by = { Resolved: new Set(), Completed: new Set() };
+    for (const [key, m] of SCAT) if (key.startsWith(`${S.project}|`)) for (const x of m.values()) if (by[x.category]) by[x.category].add(x.name);
+    return { Resolved: [...by.Resolved].sort(), Completed: [...by.Completed].sort() };
+  }
+  function closedNamesText() {
+    const by = statesByCat();
+    const names = prefs.closedCats.flatMap((c) => by[c] || []);
+    return names.length ? [...new Set(names)].join(', ') : 'Resolved, Completed, Closed, Done, Accepted';
+  }
+  // Quando o card fechou: ClosedDate se o estado é "Completed"; senão a data em que entrou no estado atual.
+  function closedAtOf(f, project) {
+    const st = f['System.State'] || '', ty = f['System.WorkItemType'] || '';
+    if (!isClosedState(project, ty, st)) return null;
+    const d = (stateCat(project, ty, st) === 'Completed' && f['Microsoft.VSTS.Common.ClosedDate'])
+      || f['Microsoft.VSTS.Common.StateChangeDate'] || f['Microsoft.VSTS.Common.ResolvedDate'] || f['Microsoft.VSTS.Common.ClosedDate'] || f['System.ChangedDate'];
+    return d ? new Date(d) : null;
+  }
+  // Cards de rotina sem horas (Code Review, Integrated Test…) que você não aponta: escondidos da lista "sem horas"
+  function hiddenWhy(r) {
+    if (r.myHours > 0) return '';
+    if (prefs.hiddenIds.includes(r.id)) return 'id';
+    const t = (r.title || '').toLowerCase();
+    const hit = prefs.hideTitles.find((x) => x && t.includes(x.toLowerCase()));
+    return hit ? `título contém "${hit}"` : '';
+  }
+
   // ───────── Produtividade: cards fechados com horas suas ─────────
-  // Regra: conta o card se ele está fechado (Closed/Done/Resolved) e tem pelo menos uma sessão sua com horas.
-  // O dia em que ele conta é o dia em que foi fechado (ClosedDate).
-  const PROD_FIELDS = ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.TeamProject', 'System.AssignedTo', 'Microsoft.VSTS.Common.ClosedDate', 'Microsoft.VSTS.Common.ClosedBy', F_WS];
-  const CLOSED_RE = /^(Closed|Done|Resolved)$/i;
+  // Regra: conta o card se ele está num estado de fechado (ver "Estados" acima) e tem pelo menos uma sessão sua com horas.
+  // O dia em que ele conta é o dia em que foi fechado.
+  const PROD_FIELDS = ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.TeamProject', 'System.AssignedTo', 'System.ChangedDate',
+    'Microsoft.VSTS.Common.ClosedDate', 'Microsoft.VSTS.Common.ClosedBy', 'Microsoft.VSTS.Common.StateChangeDate', 'Microsoft.VSTS.Common.ResolvedDate', 'Microsoft.VSTS.Common.ResolvedBy', F_WS];
+  const OPTIONAL_FIELDS = ['Microsoft.VSTS.Common.ResolvedDate', 'Microsoft.VSTS.Common.ResolvedBy', 'Microsoft.VSTS.Common.StateChangeDate'];
   const monthStart = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
   const dayKey = (d) => dateInput(d);
   const P = { month: monthStart(new Date()), rows: [], loadedKey: '', loading: false, selDay: null, error: '' };
@@ -897,7 +974,14 @@
   async function getItemsWith(ids, fields) {
     const out = []; const uniq = [...new Set(ids.map(Number))].filter(Boolean);
     for (let i = 0; i < uniq.length; i += 200) {
-      const j = await api(`/_apis/wit/workitems?ids=${uniq.slice(i, i + 200).join(',')}&fields=${fields.join(',')}&errorPolicy=Omit&api-version=7.1`);
+      const url = (fs) => `/_apis/wit/workitems?ids=${uniq.slice(i, i + 200).join(',')}&fields=${fs.join(',')}&errorPolicy=Omit&api-version=7.1`;
+      let j;
+      try { j = await api(url(fields)); }
+      catch (e) {
+        // algum campo opcional não existe nesta organização: tenta de novo sem eles
+        if (e.status !== 400 || !fields.some((x) => OPTIONAL_FIELDS.includes(x))) throw e;
+        j = await api(url(fields.filter((x) => !OPTIONAL_FIELDS.includes(x))));
+      }
       for (const w of j.value || []) if (w && w.fields) out.push(w);
     }
     return out;
@@ -913,25 +997,29 @@
     if (!force && P.loadedKey === key) { renderProd(); return; }
     if (!silent) { P.loading = true; P.error = ''; renderProd(); }
     try {
-      const q = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [Microsoft.VSTS.Common.ClosedDate] >= '${ymdW(addDays(from, -1))}' AND [Microsoft.VSTS.Common.ClosedDate] < '${ymdW(addDays(to, 1))}' AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me OR [Microsoft.VSTS.Common.ClosedBy] = @Me)`;
+      const a = ymdW(addDays(from, -1)), b = ymdW(addDays(to, 1));
+      const q = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND (([Microsoft.VSTS.Common.ClosedDate] >= '${a}' AND [Microsoft.VSTS.Common.ClosedDate] < '${b}') OR ([Microsoft.VSTS.Common.StateChangeDate] >= '${a}' AND [Microsoft.VSTS.Common.StateChangeDate] < '${b}')) AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me OR [Microsoft.VSTS.Common.ClosedBy] = @Me)`;
       let ids = [];
       try { ids = await wiql(q, S.project, 2000); }
       catch (e) { if (e.status === 401) throw e; ids = await wiql(q.replace(' OR [System.AssignedTo] EVER @Me', ''), S.project, 2000); }
       // Também os itens onde você tem sessões (podem ter sido fechados por outra pessoa)
       const withMine = [...S.items.values()].filter((it) => it.entries.some(isMine)).map((it) => it.id);
       const all = await getItemsWith([...ids, ...withMine, ...(S.hubIds || [])], PROD_FIELDS);
+      await ensureStateCats([S.project, ...all.map((w) => w.fields['System.TeamProject'])]);
       P.rows = all.map((w) => {
         const f = w.fields;
+        const project = f['System.TeamProject'] || S.project;
         const entries = (parseEntries(f[F_WS]) || []).filter((e) => isMine(e) && e.start && e.end);
-        const closed = f['Microsoft.VSTS.Common.ClosedDate'] && CLOSED_RE.test(f['System.State'] || '') ? new Date(f['Microsoft.VSTS.Common.ClosedDate']) : null;
         const who = (x) => (x && (x.uniqueName || x.displayName) || '').toLowerCase();
         return {
           id: w.id, title: f['System.Title'] || `#${w.id}`, type: f['System.WorkItemType'] || '', state: f['System.State'] || '',
-          project: f['System.TeamProject'] || S.project, closed, entries,
+          project, closed: closedAtOf(f, project), entries,
+          removed: isRemovedState(project, f['System.WorkItemType'], f['System.State']),
           myHours: entries.reduce((a, e) => a + entryHours(e), 0),
-          mineToClose: who(f['Microsoft.VSTS.Common.ClosedBy']) === S.me.email || who(f['System.AssignedTo']) === S.me.email,
+          mineToClose: [f['Microsoft.VSTS.Common.ClosedBy'], f['Microsoft.VSTS.Common.ResolvedBy'], f['System.AssignedTo']].some((x) => who(x) === S.me.email),
         };
       });
+      if (S.side !== 'recent') renderList();
       P.loadedKey = key;
     } catch (e) { P.error = e.message; }
     finally { P.loading = false; renderProd(); }
@@ -945,7 +1033,8 @@
     for (const r of P.rows) for (const e of r.entries) seen.set(`${r.id}:${e.id || e.start}`, e);
     let hours = 0;
     for (const e of seen.values()) { const s = new Date(e.start); if (e.end && s >= a && s < b) hours += entryHours(e); }
-    return { counted, hours, noHours: P.rows.filter((r) => inP(r.closed) && r.myHours === 0 && r.mineToClose) };
+    const noH = P.rows.filter((r) => inP(r.closed) && r.myHours === 0 && r.mineToClose);
+    return { counted, hours, noHours: noH.filter((r) => !hiddenWhy(r)), hidden: noH.filter((r) => hiddenWhy(r)) };
   }
   function kpi(label, sub, st, goal) {
     const n = st.counted.length;
@@ -963,7 +1052,8 @@
     const monthName = m0.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
     let html = `<div class="p-nav"><button class="icon" data-act="p-prev">‹</button><span class="mlabel">${esc(monthName[0].toUpperCase() + monthName.slice(1))}</span>
       <button class="icon" data-act="p-next">›</button><button data-act="p-today">Mês atual</button><span class="grow"></span>
-      <span class="muted">${g ? `Meta: ${g} card${g === 1 ? '' : 's'}/dia` : 'Sem meta de cards: defina em ⚙'}</span></div>`;
+      <span class="muted" title="Conta o card quando ele chega num destes estados e tem horas suas. Mude em ⚙ Configurações.">Fechado = ${esc(closedNamesText())}</span>
+      <span class="muted">·</span><span class="muted">${g ? `Meta: ${g} card${g === 1 ? '' : 's'}/dia` : 'Sem meta de cards: defina em ⚙'}</span></div>`;
     if (P.loading && !P.rows.length) { el.innerHTML = html + '<div class="muted">Carregando seus cards…</div>'; return; }
     if (P.error) html += `<div class="p-sec" style="color:#fca5a5">Não consegui carregar: ${esc(P.error)}</div>`;
     const t0 = new Date(); t0.setHours(0, 0, 0, 0);
@@ -993,13 +1083,18 @@
     const when = (d) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${timeStr(d)}`;
     html += `<div class="p-sec"><h3>✅ Cards contabilizados ${esc(label)} (${rows.length})</h3>${rows.length ? `<table class="t"><tr><th>Fechado em</th><th>Card</th><th>Título</th><th>Tipo</th><th style="text-align:right">Suas horas</th></tr>
       ${rows.map((r) => `<tr><td class="num" style="text-align:left">${when(r.closed)}</td><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td class="num">${fmtH(r.myHours)}</td></tr>`).join('')}</table>` : '<div class="muted">Nenhum card fechado com horas suas nesse período.</div>'}</div>`;
-    if (st.noHours.length) {
-      html += `<div class="p-sec"><h3 class="warn-h">⚠ Fechados ${esc(label)} sem horas suas (${st.noHours.length}): não contam até você apontar</h3><table class="t"><tr><th>Fechado em</th><th>Card</th><th>Título</th><th>Tipo</th><th></th></tr>
-        ${st.noHours.sort((x, y) => y.closed - x.closed).map((r) => `<tr><td class="num" style="text-align:left">${when(r.closed)}</td><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td class="num"><button class="chip-btn" data-act="p-log" data-id="${r.id}">Apontar</button></td></tr>`).join('')}</table></div>`;
+    if (st.noHours.length || st.hidden.length) {
+      const shown = P.showHidden ? st.noHours.concat(st.hidden) : st.noHours;
+      const hidNote = st.hidden.length ? ` <span class="muted hid-note">· ${st.hidden.length} oculto${st.hidden.length === 1 ? '' : 's'} (${esc([...prefs.hideTitles, ...(st.hidden.some((r) => hiddenWhy(r) === 'id') ? [`${st.hidden.filter((r) => hiddenWhy(r) === 'id').length} escolhido(s) por você`] : [])].join(', '))}) <button class="chip-btn" data-act="p-hid">${P.showHidden ? 'Esconder' : 'Mostrar'}</button></span>` : '';
+      html += `<div class="p-sec"><h3 class="warn-h">⚠ Fechados ${esc(label)} sem horas suas (${st.noHours.length}): não contam até você apontar${hidNote}</h3>${shown.length ? `<table class="t"><tr><th>Fechado em</th><th>Card</th><th>Título</th><th>Tipo</th><th></th></tr>
+        ${shown.sort((x, y) => y.closed - x.closed).map((r) => { const why = hiddenWhy(r); return `<tr${why ? ' class="hidrow"' : ''}><td class="num" style="text-align:left">${when(r.closed)}</td><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td class="num" style="white-space:nowrap">${
+          why === 'id' ? '<button class="chip-btn" data-act="p-unhide" data-id="' + r.id + '" title="Voltar a mostrar este card">Reexibir</button> '
+          : why ? `<span class="muted" style="font-size:11.5px">oculto: ${esc(why)}</span> `
+          : `<button class="chip-btn ghost" data-act="p-hide" data-id="${r.id}" title="Não mostrar mais este card nesta lista">Ocultar</button> `}<button class="chip-btn" data-act="p-log" data-id="${r.id}">Apontar</button></td></tr>`; }).join('')}</table>` : '<div class="muted">Todos os fechados sem horas deste período estão ocultos.</div>'}</div>`;
     }
-    const open = P.rows.filter((r) => !r.closed && r.myHours > 0 && !/^Removed$/i.test(r.state)).sort((x, y) => y.myHours - x.myHours);
+    const open = P.rows.filter((r) => !r.closed && r.myHours > 0 && !r.removed).sort((x, y) => y.myHours - x.myHours);
     if (open.length) {
-      html += `<div class="p-sec"><h3>⏳ Com horas suas, ainda abertos (${open.length}): contam quando forem fechados</h3><table class="t"><tr><th>Card</th><th>Título</th><th>Estado</th><th style="text-align:right">Suas horas</th></tr>
+      html += `<div class="p-sec"><h3>⏳ Com horas suas, ainda abertos (${open.length}): contam quando chegarem em ${esc(closedNamesText())}</h3><table class="t"><tr><th>Card</th><th>Título</th><th>Estado</th><th style="text-align:right">Suas horas</th></tr>
         ${open.map((r) => `<tr><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.state)}</td><td class="num">${fmtH(r.myHours)}</td></tr>`).join('')}</table></div>`;
     }
     if (P.loading) html += '<div class="muted">Atualizando…</div>';
@@ -1274,9 +1369,9 @@
 
   // ───────── Aba Cards ─────────
   const CARD_FIELDS = ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.Parent', 'System.TeamProject', 'System.AssignedTo',
-    'System.CreatedDate', 'System.CreatedBy', 'System.ChangedDate', 'Microsoft.VSTS.Common.ClosedDate', 'System.AreaPath', 'System.IterationPath', F_WS];
+    'System.CreatedDate', 'System.CreatedBy', 'System.ChangedDate', 'Microsoft.VSTS.Common.ClosedDate', 'Microsoft.VSTS.Common.StateChangeDate', 'Microsoft.VSTS.Common.ResolvedDate', 'System.AreaPath', 'System.IterationPath', F_WS];
   const C = { month: monthStart(new Date()), rows: [], raw: new Map(), parents: new Map(), loading: false, error: '', key: '', state: null, q: '', show: 'active', group: true };
-  const isDone = (st) => /^(Closed|Done|Resolved|Removed)$/i.test(st || '');
+  const isDone = (st, type, project) => isClosedState(project, type, st) || isRemovedState(project, type, st);
   const stClass = (st) => (isDone(st) ? 'done' : /^(New|To Do|Proposed)$/i.test(st || '') ? 'new' : 'act');
   const who = (x) => (x && (x.uniqueName || x.displayName) || '').toLowerCase();
   async function loadCards(force, silent) {
@@ -1290,6 +1385,7 @@
       catch (e) { if (e.status === 401) throw e; ids = await wiql(`${base} AND ([System.AssignedTo] = @Me OR [System.CreatedBy] = @Me) ORDER BY [System.ChangedDate] DESC`, S.project, 600); }
       const withMine = [...S.items.values()].filter((it) => it.entries.some(isMine)).map((it) => it.id);
       const all = await getItemsWith([...ids, ...withMine, ...(S.hubIds || [])], CARD_FIELDS);
+      await ensureStateCats([S.project, ...all.map((w) => w.fields['System.TeamProject'])]);
       C.raw = new Map(all.map((w) => [w.id, w]));
       C.rows = all.map((w) => {
         const f = w.fields;
@@ -1300,7 +1396,7 @@
           assignedMe: who(f['System.AssignedTo']) === S.me.email, createdMe: who(f['System.CreatedBy']) === S.me.email,
           created: f['System.CreatedDate'] ? new Date(f['System.CreatedDate']) : null,
           changed: f['System.ChangedDate'] ? new Date(f['System.ChangedDate']) : null,
-          closed: f['Microsoft.VSTS.Common.ClosedDate'] && isDone(f['System.State']) ? new Date(f['Microsoft.VSTS.Common.ClosedDate']) : null,
+          closed: closedAtOf(f, f['System.TeamProject'] || S.project),
           entries, myHours: entries.reduce((a, e) => a + entryHours(e), 0),
         };
       });
@@ -1326,7 +1422,7 @@
     // "Meus cards": atribuídos a mim, criados por mim ou com horas minhas
     const mine = C.rows.filter((r) => r.assignedMe || r.createdMe || r.myHours > 0);
     const hoursMonth = (r) => r.entries.reduce((a, e) => a + (inM(new Date(e.start)) ? entryHours(e) : 0), 0);
-    const active = mine.filter((r) => !isDone(r.state) && r.assignedMe);
+    const active = mine.filter((r) => !isDone(r.state, r.type, r.project) && r.assignedMe);
     const closedM = mine.filter((r) => inM(r.closed));
     const createdM = mine.filter((r) => inM(r.created) && r.createdMe);
     const hM = mine.reduce((a, r) => a + hoursMonth(r), 0);
@@ -1345,7 +1441,7 @@
       <div class="bars2">${days.map((d, i) => `<div class="b${d.getDay() % 6 === 0 ? ' we' : ''}${holidayOf(d) ? ' hol' : ''}" title="${pad(d.getDate())}/${pad(d.getMonth() + 1)}: ${cr[i]} criado(s), ${fe[i]} fechado(s)${holidayOf(d) ? ` · Feriado: ${esc(holidayOf(d).name)}` : ''}"><i class="c" style="height:${(100 * cr[i]) / mx}%"></i><i class="f" style="height:${(100 * fe[i]) / mx}%"></i></div>`).join('')}</div>
       <div class="xlab">${days.map((d) => `<span class="${sameDay(d, t0) ? 'today' : holidayOf(d) ? 'hol' : ''}">${d.getDate()}</span>`).join('')}</div></div>`;
     // Status
-    const pool = C.show === 'active' ? mine.filter((r) => !isDone(r.state)) : C.show === 'closedM' ? closedM : mine;
+    const pool = C.show === 'active' ? mine.filter((r) => !isDone(r.state, r.type, r.project)) : C.show === 'closedM' ? closedM : mine;
     const states = {}; for (const r of pool) states[r.state] = (states[r.state] || 0) + 1;
     html += `<div class="ctool"><input type="search" class="c-q" placeholder="Filtrar por #ID ou título…" value="${esc(C.q)}">
       <select class="c-show"><option value="active"${C.show === 'active' ? ' selected' : ''}>Não fechados</option><option value="closedM"${C.show === 'closedM' ? ' selected' : ''}>Fechados no mês</option><option value="all"${C.show === 'all' ? ' selected' : ''}>Todos (últimos 120 dias)</option></select>
@@ -1627,6 +1723,9 @@
       else if (act === 'c-new') openCreateCards(btn.dataset.parent ? Number(btn.dataset.parent) : null);
       else if (act === 'p-prev' || act === 'p-next') { P.month = new Date(P.month.getFullYear(), P.month.getMonth() + (act === 'p-prev' ? -1 : 1), 1); P.selDay = null; loadProd(); }
       else if (act === 'p-today') { P.month = monthStart(new Date()); P.selDay = null; loadProd(); }
+      else if (act === 'p-hid') { P.showHidden = !P.showHidden; renderProd(); }
+      else if (act === 'p-hide') { if (!prefs.hiddenIds.includes(id)) prefs.hiddenIds.push(id); savePrefs(); renderProd(); toast(`#${id} não aparece mais na lista "sem horas". Para reexibir, clique em Mostrar ao lado dos ocultos.`); }
+      else if (act === 'p-unhide') { prefs.hiddenIds = prefs.hiddenIds.filter((x) => x !== id); savePrefs(); renderProd(); }
       else if (act === 'p-day') { const k = btn.dataset.day; P.selDay = P.selDay === k ? null : k; renderProd(); }
       else if (act === 'p-log') { const it = P.rows.find((r) => r.id === id); if (it) { const ensure = await ensureItem(id); const end = it.closed ? truncMin(it.closed) : truncMin(new Date()); openSessionDialog({ itemId: ensure ? ensure.id : id, start: new Date(end.getTime() - 3600e3), end }); } }
       else if (act === 'search') { if (S.side === 'recent') loadRecent(true); else searchAzure(); }
@@ -1894,6 +1993,14 @@
           <button class="h-add" style="flex:none">＋ Adicionar</button>
         </div>
       </div>
+      <div class="tok">
+        <div style="display:flex;align-items:center;gap:8px"><b>✅ O que conta como fechado</b><span class="muted" style="font-size:12px">· para a meta de cards e a aba Produtividade</span></div>
+        <div class="muted" style="font-size:12px;margin:4px 0 8px">O app lê a categoria de cada estado no Azure. Marque as categorias que, no seu time, significam card terminado.</div>
+        <div class="s-cats"></div>
+        <label style="margin-top:10px">Ocultar da lista "fechados sem horas" os cards cujo título contém <span class="muted">(separe por vírgula)</span>
+          <input class="s-hide" value="${esc(prefs.hideTitles.join(', '))}" placeholder="Ex.: Code Review, Integrated Test"></label>
+        <div class="muted" style="font-size:12px;margin-top:4px">Só esconde cards sem horas suas; um card oculto que receber horas volta a contar normalmente.${prefs.hiddenIds.length ? ` ${prefs.hiddenIds.length} card(s) ocultos um a um · <a href="#" class="s-unhide">reexibir todos</a>` : ''}</div>
+      </div>
       <div class="row">
         <label>Meta diária (h)<input type="number" min="1" max="24" step="0.5" class="s-goal" value="${prefs.dailyGoal}"></label>
         <label>Cards fechados por dia<input type="number" min="0" max="50" step="1" class="s-cards" value="${prefs.cardGoal || ''}" placeholder="sem meta"></label>
@@ -1974,6 +2081,15 @@
       try { HOL_SAVED = (await local('/api/holidays', { method: 'POST', body: { date: d, name: n || 'Feriado' } })).holidays; rebuildHolidays(); drawHol(); render(); q('.h-name').value = ''; }
       catch (e) { msg(e.message, '#fca5a5'); }
     });
+    // Estados de fechado
+    let cats = prefs.closedCats.slice();
+    const drawCats = () => {
+      const by = statesByCat();
+      q('.s-cats').innerHTML = ['Resolved', 'Completed'].map((c) => `<label class="chk"><input type="checkbox" data-c="${c}" ${cats.includes(c) ? 'checked' : ''}> ${CAT_LABEL[c]} <span class="muted">(${esc(by[c].length ? by[c].join(', ') : c === 'Resolved' ? 'ex.: Resolved, Completed' : 'ex.: Closed, Done, Accepted')})</span></label>`).join('');
+      q('.s-cats').querySelectorAll('input').forEach((i) => i.addEventListener('change', () => { cats = [...q('.s-cats').querySelectorAll('input:checked')].map((x) => x.dataset.c); }));
+    };
+    drawCats(); ensureStateCats([S.project]).then(() => { if (q('.s-cats')) drawCats(); });
+    if (q('.s-unhide')) q('.s-unhide').addEventListener('click', (e) => { e.preventDefault(); prefs.hiddenIds = []; savePrefs(); e.target.parentElement.textContent = 'Todos os cards ocultos um a um voltam a aparecer.'; });
     q('.s-cancel').addEventListener('click', closeModal);
     q('.s-token').addEventListener('click', () => openSetup());
     q('.s-save').addEventListener('click', () => {
@@ -1982,7 +2098,12 @@
       prefs.dayStart = Math.max(0, Math.min(23, Number(q('.s-h0').value) || 0));
       prefs.dayEnd = Math.max(prefs.dayStart + 1, Math.min(24, Number(q('.s-h1').value) || 24));
       prefs.dryRun = q('.s-dry').checked;
-      savePrefs(); closeModal(); render();
+      const catsChanged = cats.slice().sort().join() !== prefs.closedCats.slice().sort().join();
+      prefs.closedCats = cats.length ? cats : ['Resolved', 'Completed'];
+      prefs.hideTitles = q('.s-hide').value.split(',').map((x) => x.trim()).filter(Boolean);
+      savePrefs(); closeModal();
+      if (catsChanged) { P.loadedKey = ''; C.key = ''; if (S.view === 'prod') loadProd(true); else if (S.view === 'cards') loadCards(true); }
+      render();
     });
   }
 

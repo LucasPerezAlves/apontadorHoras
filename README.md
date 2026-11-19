@@ -59,11 +59,12 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
 
 ![Produtividade](docs/img/produtividade.png)
 
-- Conta como **card feito** o que está **fechado** (Closed/Done/Resolved) **e** tem **horas suas** apontadas. Ele entra no **dia do fechamento**.
+- Conta como **card feito** o que está **fechado** **e** tem **horas suas** apontadas. Ele entra no **dia do fechamento**.
+- **Fechado** é decidido pela categoria do estado no Azure, não pelo nome. Por padrão valem as categorias *Resolvido* e *Concluído*, o que no processo do EMR inclui **Completed**, **Accepted** e **Closed**. O topo da aba mostra quais estados estão valendo, e em **⚙ Configurações → O que conta como fechado** você escolhe as categorias.
 - Tem indicadores de **Hoje**, **Semana** e **Mês**, com a meta de cards por dia (configurável), e um gráfico do mês com a linha da meta. Clique num dia para filtrar.
 - Listas:
   - ✅ **Cards contabilizados**, com o link para o Azure e as horas de cada um.
-  - ⚠ **Fechados sem horas suas**, que ainda não contam. O botão **Apontar** já preenche o horário do fechamento.
+  - ⚠ **Fechados sem horas suas**, que ainda não contam. O botão **Apontar** já preenche o horário do fechamento. Cards de rotina que você não aponta (por padrão os com **Code Review** ou **Integrated Test** no título) ficam ocultos, e o botão **Ocultar** esconde qualquer outro. **Mostrar** exibe os ocultos, e a lista de títulos fica em ⚙ Configurações. Um card oculto que receber horas volta a contar normalmente.
   - ⏳ **Com horas, ainda abertos**, que vão contar quando forem fechados.
 
 ### ⏱ Cronômetro com cards pausados
