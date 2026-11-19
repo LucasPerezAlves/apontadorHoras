@@ -235,6 +235,16 @@
     .item .acts { display: none; }
     .item.sel .acts { display: flex; }
   }
+  .upd { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: #10261c; border-bottom: 1px solid #1f5137; color: #bbf7d0; font-size: 13px; }
+  .upd[hidden] { display: none; }
+  .upd.err { background: #2a1515; border-color: #5b2323; color: #fecaca; }
+  .upd .grow { flex: 1; }
+  .upd button { padding: 3px 10px; font-size: 12.5px; }
+  .upd .ubar { width: 160px; height: 6px; background: #1f3a2c; border-radius: 3px; overflow: hidden; }
+  .upd .ubar i { display: block; height: 100%; background: #22c55e; transition: width .3s; }
+  .notes { max-height: 55vh; overflow: auto; font-size: 13px; line-height: 1.5; }
+  .notes h3 { font-size: 14px; margin: 12px 0 4px; }
+  .notes ul { margin: 4px 0; padding-left: 18px; }
 </style>
 </head>
 <body>
@@ -253,6 +263,7 @@
     <button class="icon" data-act="reload" title="Recarregar">↻</button>
     <button class="icon" data-act="settings" title="Configurações">⚙</button>
   </header>
+  <div class="upd" hidden></div>
   <div class="body">
     <aside>
       <div class="side-tabs"><button data-act="side-mine" class="on">Meus itens</button><button data-act="side-recent">Criados recentemente</button></div>
@@ -1723,6 +1734,9 @@
       else if (act === 'c-new') openCreateCards(btn.dataset.parent ? Number(btn.dataset.parent) : null);
       else if (act === 'p-prev' || act === 'p-next') { P.month = new Date(P.month.getFullYear(), P.month.getMonth() + (act === 'p-prev' ? -1 : 1), 1); P.selDay = null; loadProd(); }
       else if (act === 'p-today') { P.month = monthStart(new Date()); P.selDay = null; loadProd(); }
+      else if (act === 'u-go') doUpdate();
+      else if (act === 'u-notes') openNotes();
+      else if (act === 'u-later') { if (UPD.info && UPD.info.state === 'error') { UPD.busy = false; UPD.info.state = 'idle'; } else if (UPD.info) { prefs.skipVersion = UPD.info.latest; savePrefs(); toast('Ok. Você pode atualizar depois em ⚙ Configurações.'); } renderUpd(); }
       else if (act === 'p-hid') { P.showHidden = !P.showHidden; renderProd(); }
       else if (act === 'p-hide') { if (!prefs.hiddenIds.includes(id)) prefs.hiddenIds.push(id); savePrefs(); renderProd(); toast(`#${id} não aparece mais na lista "sem horas". Para reexibir, clique em Mostrar ao lado dos ocultos.`); }
       else if (act === 'p-unhide') { prefs.hiddenIds = prefs.hiddenIds.filter((x) => x !== id); savePrefs(); renderProd(); }
@@ -2009,6 +2023,7 @@
       </div>
       <label class="chk"><input type="checkbox" class="s-dry" ${prefs.dryRun ? 'checked' : ''}> Modo teste: o Azure valida as gravações, mas nada é salvo</label>
       <div class="foot">
+        <span class="muted" style="font-size:12px">Versão <span class="s-ver">${esc((UPD.info && UPD.info.current) || '…')}</span></span><button class="s-upd" style="font-size:12px">Procurar atualizações</button><span class="s-updmsg muted" style="font-size:12px"></span>
         <span class="grow"></span>
         <button class="s-cancel">Cancelar</button><button class="primary s-save">Salvar</button>
       </div>`;
@@ -2090,6 +2105,16 @@
     };
     drawCats(); ensureStateCats([S.project]).then(() => { if (q('.s-cats')) drawCats(); });
     if (q('.s-unhide')) q('.s-unhide').addEventListener('click', (e) => { e.preventDefault(); prefs.hiddenIds = []; savePrefs(); e.target.parentElement.textContent = 'Todos os cards ocultos um a um voltam a aparecer.'; });
+    const updMsg = (i) => {
+      if (!q('.s-updmsg')) return;
+      if (!i) { q('.s-updmsg').textContent = 'Não consegui verificar.'; return; }
+      q('.s-ver').textContent = i.current;
+      q('.s-updmsg').innerHTML = i.available ? `· <b style="color:#86efac">versão ${esc(i.latest)} disponível</b> ${i.canApply ? '<button class="primary s-updgo" style="font-size:12px">Atualizar agora</button>' : `<a href="${esc(i.page)}" target="_blank" rel="noopener">Baixar ↗</a>`}`
+        : i.checkError ? `· ${esc(i.checkError)}` : i.latest ? '· você está na versão mais recente' : '';
+      if (q('.s-updgo')) q('.s-updgo').addEventListener('click', () => { closeModal(); prefs.skipVersion = ''; savePrefs(); doUpdate(); });
+    };
+    checkAppUpdate().then(updMsg);
+    q('.s-upd').addEventListener('click', async () => { q('.s-updmsg').textContent = '· procurando…'; prefs.skipVersion = ''; savePrefs(); updMsg(await checkAppUpdate(true)); });
     q('.s-cancel').addEventListener('click', closeModal);
     q('.s-token').addEventListener('click', () => openSetup());
     q('.s-save').addEventListener('click', () => {
@@ -2167,6 +2192,84 @@
     setTimeout(() => q('.c-pat').focus(), 0);
   }
 
+  // ───────── Versão nova do app ─────────
+  // O app consulta a última release no GitHub; aqui só mostra o aviso e acompanha a atualização.
+  const UPD = { info: null, busy: false };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function checkAppUpdate(force) {
+    try { UPD.info = await local('/api/update' + (force ? '?check=1' : '')); } catch { return null; }
+    renderUpd();
+    return UPD.info;
+  }
+  function renderUpd() {
+    const el = $('.upd'), i = UPD.info;
+    if (!el) return;
+    const working = i && (i.state === 'downloading' || i.state === 'restarting');
+    const show = i && (working || (UPD.busy && i.state === 'error') || (i.available && prefs.skipVersion !== i.latest));
+    el.hidden = !show; el.classList.toggle('err', !!(i && i.state === 'error' && UPD.busy));
+    if (!show) return;
+    if (i.state === 'downloading') {
+      el.innerHTML = `⬇ Baixando a versão ${esc(i.latest)}… ${Math.round((i.progress || 0) * 100)}%<span class="ubar"><i style="width:${Math.round((i.progress || 0) * 100)}%"></i></span><span class="grow"></span>`;
+    } else if (i.state === 'restarting') {
+      el.innerHTML = '🔄 Instalando e reabrindo o app… não feche esta janela.<span class="grow"></span>';
+    } else if (i.state === 'error' && UPD.busy) {
+      el.innerHTML = `⚠ Não deu para atualizar: ${esc(i.error)}<span class="grow"></span><button data-act="u-go">Tentar de novo</button><a href="${esc(i.page)}" target="_blank" rel="noopener">Baixar pelo GitHub ↗</a><button class="icon" data-act="u-later" title="Fechar">✕</button>`;
+    } else {
+      el.innerHTML = `🎉 <b>Versão ${esc(i.latest)} disponível</b><span style="opacity:.8">· você está na ${esc(i.current)}</span><span class="grow"></span>
+        ${i.notes ? '<button data-act="u-notes">Ver novidades</button>' : ''}
+        ${i.canApply ? '<button class="primary" data-act="u-go">Atualizar agora</button>' : `<a href="${esc(i.page)}" target="_blank" rel="noopener">Baixar ↗</a>`}
+        <button class="icon" data-act="u-later" title="Lembrar na próxima versão">Depois</button>`;
+    }
+  }
+  function mdLite(t) {
+    const out = []; let inList = false;
+    for (const raw of String(t || '').replace(/\r/g, '').split('\n')) {
+      const line = esc(raw).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+      const li = /^\s*[-*]\s+(.*)/.exec(line);
+      if (li) { if (!inList) { out.push('<ul>'); inList = true; } out.push(`<li>${li[1]}</li>`); continue; }
+      if (inList) { out.push('</ul>'); inList = false; }
+      const h = /^#{1,4}\s+(.*)/.exec(line);
+      if (h) out.push(`<h3>${h[1]}</h3>`); else if (line.trim()) out.push(`<div>${line}</div>`);
+    }
+    if (inList) out.push('</ul>');
+    return out.join('');
+  }
+  function openNotes() {
+    const i = UPD.info; if (!i) return;
+    const m = $('.modal');
+    m.classList.remove('wide');
+    m.innerHTML = `<h2>Novidades da versão ${esc(i.latest)}</h2><div class="notes">${mdLite(i.notes) || '<div class="muted">Sem descrição.</div>'}</div>
+      <div class="foot"><a href="${esc(i.page)}" target="_blank" rel="noopener">Ver no GitHub ↗</a><span class="grow"></span><button class="n-close">Fechar</button>${i.canApply ? '<button class="primary n-go">Atualizar agora</button>' : ''}</div>`;
+    $('.modal-bg').classList.add('on');
+    m.querySelector('.n-close').addEventListener('click', closeModal);
+    if (m.querySelector('.n-go')) m.querySelector('.n-go').addEventListener('click', () => { closeModal(); doUpdate(); });
+  }
+  async function doUpdate() {
+    if (UPD.busy && UPD.info && UPD.info.state !== 'error') return;
+    let pid = null;
+    try { pid = (await (await fetch('/api/version', { cache: 'no-store' })).json()).pid; } catch { /* ignore */ }
+    UPD.busy = true;
+    try { UPD.info = await local('/api/update', { method: 'POST' }); } catch (e) { UPD.busy = false; toast(e.message, true); return; }
+    renderUpd();
+    const t0 = Date.now();
+    for (;;) {
+      await wait(700);
+      let v = null;
+      try { v = await (await fetch('/api/version', { cache: 'no-store' })).json(); } catch { /* reiniciando */ }
+      if (!v && UPD.info && UPD.info.state === 'downloading') { UPD.info = Object.assign({}, UPD.info, { state: 'restarting' }); renderUpd(); }
+      if (v && pid && v.pid !== pid) { try { localStorage.setItem('apontadorHoras.updatedTo', v.version); } catch { /* ignore */ } location.reload(); return; }
+      if (v && v.pid === pid) {
+        try { UPD.info = await (await fetch('/api/update', { headers: { 'X-App-Token': APP_TOKEN }, cache: 'no-store' })).json(); } catch { /* ignore */ }
+        renderUpd();
+        if (UPD.info && UPD.info.state === 'error') return;
+      }
+      if (Date.now() - t0 > 180000) {
+        UPD.info = Object.assign({}, UPD.info, { state: 'error', error: 'O app não voltou sozinho. Feche esta janela e abra o ApontadorHoras.exe de novo.' });
+        renderUpd(); return;
+      }
+    }
+  }
+
   // ───────── Início ─────────
   async function boot() {
     render();
@@ -2177,6 +2280,10 @@
       S.me = st.me;
       await loadHolidays();
       await reload(true);
+      try {
+        const up = localStorage.getItem('apontadorHoras.updatedTo');
+        if (up) { localStorage.removeItem('apontadorHoras.updatedTo'); toast(`✓ App atualizado para a versão ${up}.`); }
+      } catch { /* ignore */ }
       const n = daysLeft(st.expiresAt);
       if (n != null && n <= 7) toast(n < 0 ? 'Seu token do Azure já venceu. Gere outro em ⚙ → Trocar token.' : `Seu token do Azure vence em ${n} dia(s). Gere outro em ⚙ antes que pare de funcionar.`, true);
     } catch (e) {
@@ -2184,6 +2291,8 @@
     }
   }
   setInterval(() => { local('/api/ping').catch(() => {}); }, 20e3);
+  setTimeout(() => checkAppUpdate(), 12e3);
+  setInterval(() => { if (!UPD.busy) checkAppUpdate(); }, 10 * 60e3);
   // Ao fechar a janela, avisa o app para encerrar (libera o .exe)
   window.addEventListener('pagehide', () => { try { navigator.sendBeacon('/api/bye?t=' + encodeURIComponent(APP_TOKEN), ''); } catch { /* ignore */ } });
   setInterval(() => { if (S.me && !S.busy && !drag && !$('.modal-bg').classList.contains('on')) render(); }, 60e3);

@@ -14,6 +14,11 @@ Mini aplicação para apontar horas no Work Session Hub do Azure DevOps (`emr-cm
 
 Dica: clique com o botão direito no .exe → **Enviar para → Área de trabalho (criar atalho)**.
 
+## Atualizar
+Quando sai uma versão nova, aparece um aviso verde no topo da janela. Clique em **Atualizar agora**: o app baixa, confere e reabre sozinho. Em **⚙ Configurações → Procurar atualizações** dá para verificar na hora.
+
+Para publicar uma versão (quem mantém o repositório): `git tag v1.2.0 && git push origin v1.2.0`. O GitHub gera o .exe e a release.
+
 ## Onde ficam os dados
 - Configuração (token criptografado): `%APPDATA%\ApontadorHoras\config.json`
 - Log: `%LOCALAPPDATA%\ApontadorHoras\app.log`

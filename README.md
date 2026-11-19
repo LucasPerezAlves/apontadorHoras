@@ -20,6 +20,8 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
   - [Configurações e token PAT](#-configurações-e-token-pat)
   - [Sincronização com o Clockin](#-sincronização-com-o-clockin)
 - [Instalação](#instalação)
+- [Atualizações](#atualizações)
+- [Publicar uma versão nova](#publicar-uma-versão-nova)
 - [Como funciona por dentro](#como-funciona-por-dentro)
 - [Segurança](#segurança)
 - [Desenvolvimento e build](#desenvolvimento-e-build)
@@ -147,8 +149,32 @@ Um userscript (Tampermonkey) adiciona o botão **⇅ Sincronizar com o Apontador
 ### Clockin (opcional / terceiros)
 
 1. Instale o **Tampermonkey** no Chrome. Em `chrome://extensions` → Tampermonkey → **Detalhes**, ligue **Permitir scripts de usuário**.
-2. Crie um novo script, cole o conteúdo de [`clockin-importar.user.js`](clockin-importar.user.js) e salve.
+2. Abra [o script da última release](../../releases/latest/download/clockin-importar.user.js). O Tampermonkey mostra a tela de instalação: clique em **Instalar**. Instalado assim, ele se atualiza sozinho.
 3. Com o **ApontadorHoras.exe aberto**, entre no Clockin em `/timer` e clique em **⇅ Sincronizar com o Apontador**.
+
+## Atualizações
+
+A partir da versão **1.1.0** o app se atualiza sozinho. Quem estiver numa versão anterior precisa baixar o `.exe` uma última vez.
+
+- Ao abrir, e a cada 4 horas, o app consulta a última release deste repositório.
+- Se houver versão nova, aparece um aviso no topo da janela com **Ver novidades**, **Atualizar agora** e **Depois**. Em **⚙ Configurações** há o botão **Procurar atualizações**.
+- **Atualizar agora** baixa o `.exe` da release, confere o tamanho e o **SHA-256**, troca o arquivo e reabre o app na mesma janela. O cronômetro e as preferências continuam como estavam.
+- Se a versão nova não iniciar em 30 segundos, o app volta sozinho para a anterior e avisa.
+- O app precisa estar numa pasta em que o seu usuário possa gravar, como `C:\ApontadorHoras`. Em `Arquivos de Programas` o aviso aparece, mas a atualização pede para baixar manualmente.
+- O script do Clockin também se atualiza: o Tampermonkey busca a versão nova na última release (por padrão, uma vez por dia). Quem instalou uma versão anterior à 1.3.0 precisa reinstalar o script uma vez, para ele passar a saber de onde buscar.
+
+## Publicar uma versão nova
+
+O workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) faz tudo a partir de uma tag:
+
+```bash
+git tag -a v1.2.0 -m "Resumo do que mudou (opcional, aparece nas novidades)"
+git push origin v1.2.0
+```
+
+O GitHub gera o `ApontadorHoras.exe` com essa versão, calcula o SHA-256, junta o `clockin-importar.user.js` e cria a release. As novidades são a mensagem da tag mais a lista de commits desde a tag anterior. Em poucos minutos, quem tem o app aberto vê o aviso.
+
+Use sempre um número maior que o anterior (1.1.0 → 1.1.1 → 1.2.0). O app só oferece versões maiores que a instalada.
 
 ---
 
@@ -176,6 +202,7 @@ Um userscript (Tampermonkey) adiciona o botão **⇅ Sincronizar com o Apontador
 - O servidor escuta só em `127.0.0.1`, confere o cabeçalho `Host` (contra DNS rebinding) e exige um token de sessão aleatório (`X-App-Token`) em toda chamada.
 - O proxy só aceita caminhos de `dev.azure.com/<org>/…` e da coleção `userWorkSessionIndex`.
 - O endpoint usado pelo Clockin (`/api/export`) só responde com o cabeçalho `X-Apontador-Bridge`. Sem CORS, nenhuma outra página consegue ler os dados.
+- A atualização só baixa da release deste repositório no GitHub, por HTTPS, e recusa o arquivo se o SHA-256 não bater com o publicado. Quem pode criar tags aqui pode publicar código para todos os usuários, então mantenha a conta do GitHub com verificação em duas etapas.
 - Log em `%LOCALAPPDATA%\ApontadorHoras\app.log`. Para ver o que acontece ao vivo, rode `ApontadorHoras.exe --debug`.
 
 ## Desenvolvimento e build

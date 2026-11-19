@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Clockin ← Apontador de Horas
 // @namespace    lpalves.apontador-horas
-// @version      1.2.0
+// @version      1.3.0
 // @description  Sincroniza o Clockin com o Apontador de Horas: compara cada dia, mostra o que muda (editar, criar, excluir) e aplica pelo próprio Clockin.
 // @match        https://clockin.intranet.premiersoft.net/*
 // @grant        GM_xmlhttpRequest
@@ -9,6 +9,8 @@
 // @grant        GM_setValue
 // @connect      127.0.0.1
 // @run-at       document-idle
+// @updateURL    https://github.com/LucasPerezAlves/apontadorHoras/releases/latest/download/clockin-importar.user.js
+// @downloadURL  https://github.com/LucasPerezAlves/apontadorHoras/releases/latest/download/clockin-importar.user.js
 // ==/UserScript==
 
 (function () {

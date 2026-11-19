@@ -20,6 +20,9 @@ const HOLIDAYS_FILE = path.join(APP_DIR, 'feriados.json');
 const LOG_FILE = path.join(DATA_DIR, 'app.log');
 const APP_TOKEN = crypto.randomBytes(24).toString('hex');
 const NO_WINDOW = process.argv.includes('--no-window');
+const AFTER_UPDATE = process.argv.includes('--after-update'); // subiu sozinho depois de uma atualização
+const APP_VERSION = (() => { try { return require('./version.js'); } catch { return '0.0.0-dev'; } })();
+const UPDATE_REPO = 'LucasPerezAlves/apontadorHoras';
 const DEBUG = process.argv.includes('--debug');
 
 fs.mkdirSync(APP_DIR, { recursive: true });
@@ -36,7 +39,7 @@ function log(...args) {
 }
 console.log = log;
 console.error = log;
-log(`Iniciando (pid ${process.pid}, node ${process.version}${process.env.AH_CHILD ? ', processo em segundo plano' : ''})`);
+log(`Iniciando v${APP_VERSION} (pid ${process.pid}, node ${process.version}${process.env.AH_CHILD ? ', processo em segundo plano' : ''}${AFTER_UPDATE ? ', depois de atualizar' : ''})`);
 
 // Clique duplo abre um console; o app se relança escondido e este processo sai.
 // Para ver o que acontece, rode com --debug (o console fica aberto e mostra o log).
@@ -228,6 +231,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, UI_HTML.replace('__APP_TOKEN__', APP_TOKEN), 'text/html; charset=utf-8');
     }
     if (!url.pathname.startsWith('/api/')) return send(res, 404, { message: 'Não encontrado' });
+    // Versão e processo: a janela usa para saber quando a versão nova já está no ar
+    if (url.pathname === '/api/version') return send(res, 200, { version: APP_VERSION, pid: process.pid });
 
     // Ponte para o Clockin: só responde a quem manda o cabeçalho próprio (páginas comuns não conseguem
     // mandar cabeçalho customizado para cá sem CORS, e este endpoint não libera CORS).
@@ -268,10 +273,20 @@ const server = http.createServer(async (req, res) => {
     if (typeof t !== 'string' || t.length !== APP_TOKEN.length || !crypto.timingSafeEqual(Buffer.from(t), Buffer.from(APP_TOKEN))) {
       return send(res, 403, { message: 'Sessão inválida. Feche e abra o app de novo.' });
     }
-    lastPing = Date.now();
+    lastPing = Date.now(); apiCalls++;
     clearTimeout(byeTimer);
 
     if (url.pathname === '/api/ping') return send(res, 200, { ok: true });
+    if (url.pathname === '/api/update' && req.method === 'GET') {
+      if (url.searchParams.get('check') === '1') await checkUpdate();
+      return send(res, 200, updateInfo());
+    }
+    if (url.pathname === '/api/update' && req.method === 'POST') {
+      if (!updateAvailable()) return send(res, 400, { message: 'Você já está na versão mais recente.' });
+      if (!(IS_WIN && process.pkg)) return send(res, 400, { message: 'A atualização automática só funciona no ApontadorHoras.exe.' });
+      applyUpdate().catch(() => { /* o erro fica em U.error */ });
+      return send(res, 202, updateInfo());
+    }
     if (url.pathname === '/api/status') {
       return send(res, 200, config && pat
         ? { configured: true, org: config.org, project: config.project, me: { email: config.email, name: config.name }, expiresAt: config.expiresAt || null }
@@ -426,9 +441,139 @@ function shutdown() {
 // Sem janela do Edge (navegador padrão), encerra se a página ficar 3 min sem dar sinal
 setInterval(() => { if (!windowProc && !NO_WINDOW && IS_WIN && Date.now() - lastPing > 3 * 60e3) shutdown(); }, 30e3);
 
+// ───────── Atualização automática (GitHub Releases) ─────────
+// O app olha a última release do repositório. Se houver versão nova, a janela mostra o aviso; ao clicar em
+// "Atualizar", ele baixa o .exe, confere tamanho e SHA-256, troca o arquivo (no Windows dá para renomear um
+// .exe em uso) e sobe a versão nova. Se ela não responder em 30 s, volta para a versão anterior.
+const U = { latest: null, tag: '', notes: '', url: '', sha256: '', size: 0, checkedAt: 0, checkError: '', state: 'idle', progress: 0, error: '' };
+const verParts = (v) => String(v || '').replace(/^v/i, '').split(/[.+-]/).map((x) => parseInt(x, 10) || 0);
+function newer(a, b) {
+  const x = verParts(a), y = verParts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; }
+  return false;
+}
+const updateAvailable = () => !!(U.latest && U.url && newer(U.latest, APP_VERSION));
+function updateInfo() {
+  return {
+    current: APP_VERSION, latest: U.latest, available: updateAvailable(), notes: U.notes, state: U.state, progress: U.progress, error: U.error,
+    checkedAt: U.checkedAt || null, checkError: U.checkError, canApply: !!(IS_WIN && process.pkg),
+    page: `https://github.com/${UPDATE_REPO}/releases/${U.tag ? `tag/${encodeURIComponent(U.tag)}` : 'latest'}`,
+  };
+}
+const GH_HEADERS = { 'User-Agent': 'ApontadorHoras', Accept: 'application/vnd.github+json' };
+let checking = null;
+function checkUpdate() {
+  if (checking) return checking;
+  checking = (async () => {
+    try {
+      let tag = '', notes = '', url = '', sha = '', size = 0;
+      const r = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, { headers: GH_HEADERS });
+      if (r.ok) {
+        const j = await r.json();
+        tag = j.tag_name || ''; notes = j.body || '';
+        const exe = (j.assets || []).find((a) => /^ApontadorHoras\.exe$/i.test(a.name));
+        if (exe) { url = exe.browser_download_url; size = exe.size || 0; if (/^sha256:[a-f0-9]{64}$/i.test(exe.digest || '')) sha = exe.digest.slice(7).toLowerCase(); }
+        const shaFile = (j.assets || []).find((a) => /^ApontadorHoras\.exe\.sha256$/i.test(a.name));
+        if (!sha && shaFile) {
+          try { sha = (((await (await fetch(shaFile.browser_download_url, { headers: GH_HEADERS })).text()).match(/\b[a-f0-9]{64}\b/i)) || [''])[0].toLowerCase(); } catch { /* ignore */ }
+        }
+      } else {
+        // Limite da API do GitHub (muita gente na mesma rede): descobre a versão pelo redirecionamento da página
+        const r2 = await fetch(`https://github.com/${UPDATE_REPO}/releases/latest`, { redirect: 'manual', headers: { 'User-Agent': 'ApontadorHoras' } });
+        const m = (r2.headers.get('location') || '').match(/\/releases\/tag\/([^/?#]+)/);
+        if (!m) throw new Error(`GitHub respondeu ${r.status}`);
+        tag = decodeURIComponent(m[1]);
+        url = `https://github.com/${UPDATE_REPO}/releases/download/${encodeURIComponent(tag)}/ApontadorHoras.exe`;
+      }
+      Object.assign(U, { latest: tag.replace(/^v/i, ''), tag, notes, url, sha256: sha, size, checkError: '' });
+      log('Atualização: atual', APP_VERSION, '· última', U.latest || '?', url ? '' : '(release sem ApontadorHoras.exe)');
+    } catch (e) { U.checkError = 'Não consegui consultar o GitHub agora.'; log('Atualização: não consegui verificar', e?.cause || e); }
+    finally { U.checkedAt = Date.now(); checking = null; }
+  })();
+  return checking;
+}
+async function downloadTo(url, file) {
+  const r = await fetch(url, { headers: { 'User-Agent': 'ApontadorHoras', Accept: 'application/octet-stream' } });
+  if (!r.ok || !r.body) throw new Error(`Não consegui baixar a versão nova (HTTP ${r.status}).`);
+  const total = Number(r.headers.get('content-length')) || U.size || 0;
+  const hash = crypto.createHash('sha256');
+  const out = fs.createWriteStream(file);
+  let got = 0;
+  try {
+    for await (const chunk of r.body) {
+      got += chunk.length; hash.update(chunk); U.progress = total ? Math.min(0.99, got / total) : 0;
+      if (!out.write(chunk)) await new Promise((ok) => out.once('drain', ok));
+    }
+  } finally { await new Promise((ok) => out.end(ok)); }
+  return { size: got, sha256: hash.digest('hex') };
+}
+async function applyUpdate() {
+  if (U.state === 'downloading' || U.state === 'restarting') return;
+  const exe = process.execPath, dir = path.dirname(exe), base = path.basename(exe, path.extname(exe));
+  const tmp = path.join(dir, `${base}.new.exe`);
+  U.state = 'downloading'; U.progress = 0; U.error = '';
+  try {
+    try { fs.writeFileSync(tmp, ''); } catch { throw new Error(`Sem permissão para gravar em ${dir}. Deixe o app numa pasta sua (ex.: C:\\ApontadorHoras) ou baixe a versão nova pelo GitHub.`); }
+    log('Atualização: baixando', U.url);
+    const got = await downloadTo(U.url, tmp);
+    if (U.size && got.size !== U.size) throw new Error('O download veio incompleto. Tente de novo.');
+    if (U.sha256 && got.sha256 !== U.sha256) throw new Error('O arquivo baixado não confere com o da release (SHA-256). Atualização cancelada.');
+    const head = Buffer.alloc(2); const fd = fs.openSync(tmp, 'r'); fs.readSync(fd, head, 0, 2, 0); fs.closeSync(fd);
+    if (head.toString('latin1') !== 'MZ' || got.size < 5e6) throw new Error('O arquivo baixado não é um .exe válido.');
+    U.progress = 1; U.state = 'restarting';
+    let old = path.join(dir, `${base}.old.exe`);
+    try { fs.rmSync(old, { force: true }); } catch { old = path.join(dir, `${base}.old-${Date.now()}.exe`); }
+    fs.renameSync(exe, old);
+    try { fs.renameSync(tmp, exe); } catch (e) { fs.renameSync(old, exe); throw e; }
+    log('Atualização: arquivo trocado; reiniciando na versão', U.latest);
+    setTimeout(() => restartInto(exe, old), 400); // deixa a resposta chegar na janela
+  } catch (e) {
+    U.state = 'error'; U.error = e.message; log('Atualização falhou', e);
+    try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
+  }
+}
+function restartInto(exe, old) {
+  try { server.close(); server.closeAllConnections?.(); } catch { /* ignore */ }
+  const env = { ...process.env, AH_CHILD: '1' };
+  delete env.PKG_EXECPATH; // sobe o .exe novo como programa próprio, não como "node" deste
+  const child = spawn('cmd.exe', ['/d', '/s', '/c', `"${exe}" --after-update`], { detached: true, windowsHide: true, stdio: 'ignore', windowsVerbatimArguments: true, env });
+  child.on('error', (e) => log('Atualização: falha ao iniciar a versão nova', e));
+  child.unref();
+  const t0 = Date.now();
+  const poll = async () => {
+    try {
+      const j = await (await fetch(`http://${HOST}:${PORT}/api/version`)).json();
+      if (j.pid !== process.pid) { log('Atualização: versão', j.version, 'no ar (pid', j.pid + '). Saindo.'); return process.exit(0); }
+    } catch { /* ainda subindo */ }
+    if (Date.now() - t0 < 30000) return setTimeout(poll, 700);
+    // A versão nova não respondeu: volta a anterior e continua rodando
+    log('Atualização: a versão nova não respondeu; voltando para', APP_VERSION);
+    try { fs.renameSync(exe, exe.replace(/\.exe$/i, '.failed.exe')); fs.renameSync(old, exe); } catch (e) { log('Atualização: não consegui restaurar', e); }
+    U.state = 'error'; U.error = 'A versão nova não iniciou. Continuei na versão atual; veja o log ou baixe pelo GitHub.';
+    server.listen(PORT, HOST);
+  };
+  setTimeout(poll, 800);
+}
+// Limpa sobras de atualizações anteriores
+if (process.pkg) setTimeout(() => {
+  try {
+    const dir = path.dirname(process.execPath), base = path.basename(process.execPath, path.extname(process.execPath));
+    for (const f of fs.readdirSync(dir)) {
+      if (U.state !== 'idle') return; // nunca durante uma atualização (o .old é o caminho de volta)
+      if (!f.startsWith(base + '.') || !/\.(old(-\d+)?|failed|new)\.exe$/i.test(f)) continue;
+      try { fs.rmSync(path.join(dir, f), { force: true }); log('Removido', f); } catch { /* ainda em uso */ }
+    }
+  } catch { /* ignore */ }
+}, 20000);
+if (process.pkg) { setTimeout(checkUpdate, 8000); setInterval(checkUpdate, 4 * 3600e3); }
+
 // ───────── Início ─────────
 loadConfig();
 server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE' && AFTER_UPDATE && listenTries < 40) {
+    // a versão anterior ainda está liberando a porta
+    listenTries++; setTimeout(() => server.listen(PORT, HOST), 250); return;
+  }
   if (e.code === 'EADDRINUSE') {
     // Já está aberto: só traz outra janela para o servidor que já roda
     log('Já existe uma instância; abrindo janela');
@@ -441,8 +586,12 @@ function openDefaultOrApp(url) {
   if (edge) spawn(edge, [`--app=${url}`, `--user-data-dir=${path.join(DATA_DIR, 'janela')}`], { stdio: 'ignore', detached: true }).unref();
   else if (IS_WIN) openDefaultBrowser(url);
 }
+let listenTries = 0, apiCalls = 0;
 server.listen(PORT, HOST, () => {
   const url = `http://${HOST}:${PORT}/`;
   log('Rodando em', url, 'configurado:', !!config);
-  openWindow(url);
+  if (!AFTER_UPDATE) return openWindow(url);
+  // Depois de atualizar, a janela que já estava aberta se recarrega sozinha. Se ninguém aparecer, abre uma.
+  lastPing = Date.now();
+  setTimeout(() => { if (!apiCalls) { log('Nenhuma janela voltou; abrindo uma nova'); openWindow(url); } }, 20000);
 });
