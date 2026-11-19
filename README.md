@@ -111,7 +111,7 @@ Um userscript (Tampermonkey) adiciona o botão **⇅ Sincronizar com o Apontador
 
 1. Baixe o `ApontadorHoras.exe` (em [Releases](../../releases)) e coloque, por exemplo, em `C:\ApontadorHoras`.
 2. Dê dois cliques. Se o Windows avisar que protegeu o computador, clique em **Mais informações → Executar assim mesmo** (o executável não é assinado).
-3. Na primeira vez, crie um **PAT** em `https://dev.azure.com/<sua-org>/_usersSettings/tokens`:
+3. Na primeira vez, crie um **PAT** em `https://dev.azure.com/<sua-org>/_usersSettings/tokens (https://dev.azure.com/emr-cm/_usersSettings/tokens)`:
    - **New Token** → Scopes **Custom defined** → **Show all scopes**
    - Marque só **Work Items: Read & write** e **Extension Data: Read & write**. A segunda faz os itens aparecerem na lista do Work Session Hub.
    - Cole no app e informe a validade.
