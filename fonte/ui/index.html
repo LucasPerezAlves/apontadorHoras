@@ -172,6 +172,17 @@
   .tpl .sw2 { flex: none; display: flex; flex-direction: row; align-items: center; gap: 8px; width: 170px; cursor: pointer; font-weight: 600; font-size: 12.5px; color: #e6e8ec; }
   .tpl .sw2 input { width: auto; }
   .tpl input.tt { flex: 1; }
+  .tpl a.badge2 { text-decoration: none; }
+  .tpl .badge2.mine { background: #14532d; color: #bbf7d0; }
+  .k-kids { border: 1px solid #2b2f38; border-radius: 8px; background: #14161c; padding: 6px 8px; font-size: 12px; }
+  .k-kids .kh { display: flex; gap: 8px; align-items: center; color: #9aa3b2; margin-bottom: 4px; }
+  .k-kids .kl { max-height: 150px; overflow: auto; }
+  .k-kids table { width: 100%; border-collapse: collapse; }
+  .k-kids td { padding: 3px 6px; border-top: 1px solid #22252d; white-space: nowrap; }
+  .k-kids td.t { white-space: normal; width: 100%; }
+  .k-kids tr.mine td { background: #10261c; }
+  .k-kids tr.rem td { opacity: .45; text-decoration: line-through; }
+  .k-kids .you { color: #86efac; font-weight: 600; }
   .tpl .badge2 { font-size: 10.5px; padding: 1px 6px; border-radius: 8px; background: #713f12; color: #fde68a; white-space: nowrap; }
   .seg3 { display: inline-flex; background: #0f1115; border: 1px solid #353a45; border-radius: 8px; padding: 2px; }
   .seg3 button { border: 0; background: transparent; padding: 4px 10px; font-size: 12px; }
@@ -1538,8 +1549,26 @@
     const m = $('.modal');
     m.classList.add('wide');
     const patOf = (r) => (fmt === 'num' ? r.num : fmt === 'tit' ? r.tit : `${r.num} - {titulo}`);
-    const exists = (title) => children.some((c) => norm2(c.title) === norm2(title));
     const norm2 = (x) => String(x || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    // Tipo de cada card padrão, para achar um filho seu parecido (ex.: "Análise do BUG 788564" x "Análise da issue 788564")
+    const KIND = { analise: /\ban[aá]lise\b/i, dev: /\bdesenvolv/i, testes: /\btestes?\b/i, commit: /\bcommits?\b/i };
+    // Devolve o filho que torna este card repetido: mesmo título (de qualquer pessoa) ou do mesmo tipo e já atribuído a você
+    const dupOf = (r) => {
+      const live = children.filter((c) => !c.removed);
+      const same = live.find((c) => norm2(c.title) === norm2(r.title));
+      if (same) return { c: same, how: 'igual' };
+      const re = r.key && KIND[r.key];
+      const mine = re && live.find((c) => c.mine && re.test(c.title || ''));
+      return mine ? { c: mine, how: 'seu' } : null;
+    };
+    const kidLink = (c) => `https://dev.azure.com/${encodeURIComponent(S.org)}/${encodeURIComponent(parent.project)}/_workitems/edit/${c.id}`;
+    const kidsHtml = () => {
+      if (!parent || !children.length) return '';
+      const list = children.slice().sort((a, b) => (b.mine - a.mine) || (a.removed - b.removed) || a.id - b.id);
+      const mineN = children.filter((c) => c.mine && !c.removed).length;
+      return `<div class="k-kids"><div class="kh"><b style="color:#e5e7eb">Filhos que já existem em #${parent.id}</b><span>${children.length} card(s)</span>·<span class="you">${mineN} atribuído(s) a você</span></div>
+        <div class="kl"><table>${list.map((c) => `<tr class="${c.mine ? 'mine' : ''}${c.removed ? ' rem' : ''}"><td><a href="${kidLink(c)}" target="_blank" rel="noopener">#${c.id}</a></td><td class="t">${esc(c.title)}</td><td class="muted">${esc(c.type)}</td><td><span class="stp ${stClass(c.state)}">${esc(c.state)}</span></td><td>${c.mine ? '<span class="you">você</span>' : esc(c.who || 'sem responsável')}</td></tr>`).join('')}</table></div></div>`;
+    };
     const refreshTitles = () => { for (const r of rows) if (!r.edited) r.title = fillTpl(patOf(r), parent); };
     const draw = () => {
       refreshTitles();
@@ -1550,6 +1579,7 @@
         <label>US / issue pai<input class="k-parent" list="k-parents" placeholder="Número ou título, ex.: 784761" value="${parent ? esc(`${parent.id} — ${parent.title}`) : parentId ? parentId : ''}" autocomplete="off"></label>
         <datalist id="k-parents">${[...C.parents.values()].filter((p) => p && !isDone(p.state) && !/^(Issue|Task)$/i.test(p.type || '')).map((p) => `<option value="${esc(`${p.id} — ${p.title}`)}"></option>`).join('')}</datalist>
         <div class="k-info" style="font-size:12px;color:#8b93a3;margin-top:-4px">${parent ? `✓ ${esc(parent.type)} · ${esc(parent.state)} · ${esc(parent.area)} · ${esc(parent.iteration)}${children.length ? ` · já tem ${children.length} filho(s)` : ''}` : ''}</div>
+        ${kidsHtml()}
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-size:12px;color:#9aa3b2">Formato do título</span>
           <span class="seg3 k-fmt"><button data-f="num" class="${fmt === 'num' ? 'on' : ''}">Número da US</button><button data-f="tit" class="${fmt === 'tit' ? 'on' : ''}">Título da US</button><button data-f="both" class="${fmt === 'both' ? 'on' : ''}">Número + título</button></span>
@@ -1558,7 +1588,9 @@
           ${all.map((r, i) => `<div class="tpl${r.on ? '' : ' off'}" data-i="${i}">
             <label class="sw2"><input type="checkbox" class="k-on" ${r.on ? 'checked' : ''}> ${esc(r.label)}</label>
             <input class="tt k-title" value="${esc(r.title)}" placeholder="Título do card">
-            ${parent && exists(r.title) ? '<span class="badge2" title="A US já tem um filho com esse título">já existe</span>' : ''}
+            ${(() => { const d = parent && dupOf(r); if (!d) return ''; return d.how === 'igual'
+              ? `<a class="badge2${d.c.mine ? ' mine' : ''}" href="${kidLink(d.c)}" target="_blank" rel="noopener" title="Já existe um filho com este título: #${d.c.id} ${esc(d.c.title)} (${d.c.mine ? 'seu' : esc(d.c.who || 'sem responsável')})">já existe #${d.c.id}${d.c.mine ? ' · seu' : ''}</a>`
+              : `<a class="badge2 mine" href="${kidLink(d.c)}" target="_blank" rel="noopener" title="Você já tem um card deste tipo nesta US: #${d.c.id} ${esc(d.c.title)} (${esc(d.c.state)})">você já tem #${d.c.id}</a>`; })()}
             ${r.key ? `<button class="ibtn k-star" title="Usar este título como padrão para os próximos">⭐</button>` : '<button class="ibtn k-del" title="Remover">🗑</button>'}
           </div>`).join('')}
         </div>
@@ -1589,8 +1621,15 @@
         const f = w.fields;
         parent = { id: w.id, title: f['System.Title'], type: f['System.WorkItemType'], state: f['System.State'], project: f['System.TeamProject'], area: f['System.AreaPath'], iteration: f['System.IterationPath'] };
         const kids = await wiql(`SELECT [System.Id] FROM WorkItems WHERE [System.Parent] = ${w.id}`, parent.project, 200).catch(() => []);
-        children = kids.length ? (await getItemsWith(kids, ['System.Id', 'System.Title', 'System.State'])).map((x) => ({ id: x.id, title: x.fields['System.Title'] })) : [];
-        for (const r of [...rows, ...extra]) if (!r.edited || r.on) { const t = r.edited ? r.title : fillTpl(patOf(r), parent); if (exists(t)) r.on = false; }
+        const whoOf = (x) => (x && (x.uniqueName || '')).toLowerCase();
+        children = kids.length ? (await getItemsWith(kids, ['System.Id', 'System.Title', 'System.State', 'System.WorkItemType', 'System.AssignedTo', 'System.TeamProject'])).map((x) => {
+          const f = x.fields, a = f['System.AssignedTo'];
+          return { id: x.id, title: f['System.Title'], state: f['System.State'] || '', type: f['System.WorkItemType'] || '', who: a ? a.displayName || a.uniqueName : '',
+            mine: whoOf(a) === S.me.email, removed: isRemovedState(f['System.TeamProject'] || parent.project, f['System.WorkItemType'], f['System.State']) };
+        }) : [];
+        // já desmarca o que repetiria um card existente (o usuário pode marcar de novo)
+        refreshTitles();
+        for (const r of [...rows, ...extra]) if (dupOf(r)) r.on = false;
         draw();
         const inp = m.querySelector('.k-parent'); inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length);
       } catch (e) { if (my === seq) { m.querySelector('.k-info').textContent = e.message; m.querySelector('.k-info').style.color = '#fca5a5'; } }
@@ -1670,7 +1709,7 @@
         } catch (e) { created.push({ title: r.title, error: e.message }); }
       }
       const ok = created.filter((c) => !c.error).length;
-      if (ok) { toast(`${ok} card(s) criado(s) em #${parent.id}.`); C.key = ''; R.key = ''; children.push(...created.filter((c) => !c.error)); }
+      if (ok) { toast(`${ok} card(s) criado(s) em #${parent.id}.`); C.key = ''; R.key = ''; children.push(...created.filter((c) => !c.error).map((c) => ({ ...c, type, mine: me, who: me ? S.me.name : '' }))); }
       draw();
       if (S.view === 'cards') loadCards(true);
     };

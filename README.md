@@ -112,6 +112,8 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
   - Antes de criar, o app faz uma validação no Azure. Se faltar um campo obrigatório ou uma permissão, nada é criado.
   - Ao final, a lista mostra os cards criados com link e ▶ para já iniciar o cronômetro.
 
+- Ao escolher a US pai, o modal mostra os **filhos que já existem** (número, título, tipo, estado e responsável), com os seus em destaque. Cada card que você está para criar é conferido: se já existe um filho com o mesmo título (de qualquer pessoa) ou se você já tem um card do mesmo tipo (Análise, Desenvolvimento, Testes, Commit) nessa US, ele aparece com **"já existe #id"** ou **"você já tem #id"** e vem desmarcado. Cards em *Removed* não contam. Dá para marcar de novo se quiser criar mesmo assim.
+
 ### ⚙ Configurações e token PAT
 
 ![Configurações](docs/img/configuracoes.png)
