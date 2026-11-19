@@ -299,7 +299,7 @@ const server = http.createServer(async (req, res) => {
     if (typeof t !== 'string' || t.length !== APP_TOKEN.length || !crypto.timingSafeEqual(Buffer.from(t), Buffer.from(APP_TOKEN))) {
       return send(res, 403, { message: 'Sessão inválida. Feche e abra o app de novo.' });
     }
-    lastPing = Date.now(); apiCalls++;
+    lastPing = Date.now(); lastApiAt = lastPing; apiCalls++;
     clearTimeout(byeTimer);
 
     if (url.pathname === '/api/ping') return send(res, 200, { ok: true });
@@ -454,7 +454,7 @@ function openWindow(url) {
     windowProc = spawn(edge, [
       `--app=${url}`, `--user-data-dir=${path.join(DATA_DIR, 'janela')}`,
       '--no-first-run', '--no-default-browser-check', '--window-size=1400,900', '--disable-features=Translate',
-    ], { stdio: 'ignore', windowsHide: false, detached: false });
+    ], { stdio: 'ignore', windowsHide: false, detached: true }); // solto: a janela sobrevive ao reinício da atualização
     const spawnedAt = Date.now();
     windowProc.on('exit', () => {
       // Se o processo saiu logo de cara, o Edge reaproveitou outra instância: passa a vigiar pelo "ping" da página.
@@ -639,12 +639,23 @@ function openDefaultOrApp(url) {
   if (edge) spawn(edge, [`--app=${url}`, `--user-data-dir=${path.join(DATA_DIR, 'janela')}`], { stdio: 'ignore', detached: true }).unref();
   else if (IS_WIN) openDefaultBrowser(url);
 }
-let listenTries = 0, apiCalls = 0;
+let listenTries = 0, apiCalls = 0, lastApiAt = 0;
 server.listen(PORT, HOST, () => {
   const url = `http://${HOST}:${PORT}/`;
   log('Rodando em', url, 'configurado:', !!config);
   if (!AFTER_UPDATE) return openWindow(url);
-  // Depois de atualizar, a janela que já estava aberta se recarrega sozinha. Se ninguém aparecer, abre uma.
+  // Depois de atualizar, a janela que já estava aberta recarrega e manda sinal a cada 5 s. Nas versões
+  // até a 1.1.5 o Edge ficava preso ao processo antigo e fechava junto com ele: se a janela ficar 8 s
+  // sem dar sinal, abre uma nova.
   lastPing = Date.now();
-  setTimeout(() => { if (!apiCalls) { log('Nenhuma janela voltou; abrindo uma nova'); openWindow(url); } }, 20000);
+  const t0 = Date.now();
+  const watch = setInterval(() => {
+    const now = Date.now();
+    if (now - t0 > 90000) return clearInterval(watch);
+    if (now - t0 > 6000 && now - (lastApiAt || t0) > 8000) {
+      clearInterval(watch);
+      log('Depois de atualizar: nenhuma janela ativa; abrindo uma nova');
+      openWindow(url);
+    }
+  }, 1000);
 });

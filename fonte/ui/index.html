@@ -2357,7 +2357,8 @@
       toast(e.message, true);
     }
   }
-  setInterval(() => { local('/api/ping').catch(() => {}); }, 20e3);
+  // sinal de vida a cada 5 s: depois de uma atualização, o app sabe se a janela continua aberta
+  setInterval(() => { local('/api/ping').catch(() => {}); }, 5e3);
   setTimeout(() => checkAppUpdate(), 12e3);
   setInterval(() => { if (!UPD.busy) checkAppUpdate(); }, 10 * 60e3);
   // Ao fechar a janela, avisa o app para encerrar (libera o .exe)
