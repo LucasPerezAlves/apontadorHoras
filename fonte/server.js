@@ -241,7 +241,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/ping') return send(res, 200, { ok: true });
     if (url.pathname === '/api/status') {
       return send(res, 200, config && pat
-        ? { configured: true, org: config.org, project: config.project, me: { email: config.email, name: config.name } }
+        ? { configured: true, org: config.org, project: config.project, me: { email: config.email, name: config.name }, expiresAt: config.expiresAt || null }
         : { configured: false, org: config?.org || 'emr-cm', project: config?.project || 'EMR' });
     }
     if (url.pathname === '/api/config' && req.method === 'POST') {
@@ -254,10 +254,30 @@ const server = http.createServer(async (req, res) => {
       if (!token) return send(res, 400, { message: 'Cole o token (PAT).' });
       let me;
       try { me = await whoAmI(org, token); } catch (e) { return send(res, 400, { message: e.message }); }
-      const c = { org, project, email: me.email, name: me.name, token: protect(token) };
+      const sameToken = token === pat && config;
+      const exp = /^\d{4}-\d{2}-\d{2}$/.test(String(body.expiresAt || '')) ? body.expiresAt : (sameToken ? config.expiresAt || null : null);
+      const c = { org, project, email: me.email, name: me.name, token: protect(token), savedAt: sameToken && config.savedAt ? config.savedAt : new Date().toISOString(), expiresAt: exp };
       saveConfig(c); config = c; pat = token;
       log('Configuração salva para', me.email, org, project);
       return send(res, 200, { ok: true, me, org, project });
+    }
+    // Tela de configurações: mostrar/copiar o token salvo (só para a própria janela do app)
+    if (url.pathname === '/api/token' && req.method === 'GET') {
+      if (!config || !pat) return send(res, 404, { message: 'Nenhum token salvo.' });
+      log('Token exibido nas configurações');
+      return send(res, 200, { token: pat, org: config.org, project: config.project, email: config.email, name: config.name, savedAt: config.savedAt || null, expiresAt: config.expiresAt || null });
+    }
+    if (url.pathname === '/api/token-meta' && req.method === 'POST') {
+      if (!config) return send(res, 404, { message: 'Nenhum token salvo.' });
+      const body = JSON.parse((await readBody(req)).toString() || '{}');
+      const exp = body.expiresAt && /^\d{4}-\d{2}-\d{2}$/.test(String(body.expiresAt)) ? String(body.expiresAt) : null;
+      config = { ...config, expiresAt: exp }; saveConfig(config);
+      return send(res, 200, { ok: true, expiresAt: exp });
+    }
+    if (url.pathname === '/api/test' && req.method === 'GET') {
+      if (!config || !pat) return send(res, 404, { message: 'Nenhum token salvo.' });
+      try { const me = await whoAmI(config.org, pat); return send(res, 200, { ok: true, me }); }
+      catch (e) { return send(res, 400, { message: e.message }); }
     }
     if (url.pathname === '/api/logout' && req.method === 'POST') {
       try { fs.unlinkSync(CONFIG_FILE); } catch { /* já não existia */ }

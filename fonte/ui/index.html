@@ -141,6 +141,7 @@
   .range button.on { background: #2563eb; border-color: #2563eb; color: #fff; }
   .range .hint { margin-left: auto; font-size: 11px; color: #6b7280; }
   .item .new { font-size: 10px; padding: 0 5px; border-radius: 6px; background: #1e3a8a; color: #bfdbfe; margin-left: 4px; }
+  .tok { background: #14161c; border: 1px solid #2b2f38; border-radius: 10px; padding: 12px; }
   .tabs { display: flex; background: #0f1115; border: 1px solid #353a45; border-radius: 8px; padding: 2px; }
   .tabs button { border: 0; background: transparent; padding: 4px 10px; }
   .tabs button.on { background: #2563eb; color: #fff; }
@@ -1481,10 +1482,35 @@
     setTimeout(() => (itemId ? q('.f-start') : q('.f-item')).focus(), 0);
   }
 
+  const daysLeft = (ymdStr) => { if (!ymdStr) return null; const [y, mo, d] = ymdStr.split('-').map(Number); const t0 = new Date(); t0.setHours(0, 0, 0, 0); return Math.round((new Date(y, mo - 1, d) - t0) / 864e5); };
+  const expLabel = (ymdStr) => {
+    const n = daysLeft(ymdStr);
+    if (n == null) return '<span class="muted">validade não informada</span>';
+    if (n < 0) return `<span style="color:#fca5a5">venceu há ${-n} dia(s)</span>`;
+    if (n <= 7) return `<span style="color:#fde68a">vence em ${n} dia(s)</span>`;
+    return `<span class="muted">vence em ${n} dias</span>`;
+  };
   function openSettings() {
     const m = $('.modal');
     m.innerHTML = `
       <h2>Configurações</h2>
+      <div class="tok">
+        <div style="display:flex;align-items:center;gap:8px"><b>🔑 Token do Azure (PAT)</b><span class="grow"></span><span class="t-exp"></span></div>
+        <div class="muted" style="font-size:12px;margin:4px 0 8px">Conectado como <b style="color:#e6e8ec">${esc(S.me?.name || '—')}</b> em <code>${esc(S.org)}/${esc(S.project)}</code><span class="t-saved"></span></div>
+        <div class="row" style="align-items:center">
+          <input class="t-val" readonly value="carregando…" style="font-family:Consolas,monospace;font-size:12.5px">
+          <button class="t-show" title="Mostrar / esconder" style="flex:none">👁 Mostrar</button>
+          <button class="t-copy" title="Copiar o token" style="flex:none">📋 Copiar</button>
+        </div>
+        <div class="row" style="align-items:flex-end;margin-top:8px">
+          <label style="flex:none">Vence em<input type="date" class="t-expd"></label>
+          <span class="grow"></span>
+          <button class="t-test">Testar conexão</button>
+          <button class="s-token">Trocar token / projeto</button>
+        </div>
+        <div class="t-msg" style="font-size:12px;min-height:16px;margin-top:6px"></div>
+        <div style="font-size:12px"><a href="https://dev.azure.com/${encodeURIComponent(S.org)}/_usersSettings/tokens" target="_blank" rel="noopener">Gerenciar meus tokens no Azure ↗</a> <span class="muted">· o token fica criptografado só para o seu usuário do Windows</span></div>
+      </div>
       <div class="row">
         <label>Meta diária (h)<input type="number" min="1" max="24" step="0.5" class="s-goal" value="${prefs.dailyGoal}"></label>
         <label>Cards fechados por dia<input type="number" min="0" max="50" step="1" class="s-cards" value="${prefs.cardGoal || ''}" placeholder="sem meta"></label>
@@ -1492,21 +1518,52 @@
         <label>até<input type="number" min="1" max="24" class="s-h1" value="${prefs.dayEnd}"></label>
       </div>
       <label class="chk"><input type="checkbox" class="s-dry" ${prefs.dryRun ? 'checked' : ''}> Modo teste: o Azure valida as gravações, mas nada é salvo</label>
-      <p style="font-size:12px">Conectado como <b>${esc(S.me?.name || '—')}</b> em <code>${esc(S.org)}/${esc(S.project)}</code>.</p>
       <div class="foot">
-        <button class="s-token">Trocar token / projeto</button>
         <span class="grow"></span>
         <button class="s-cancel">Cancelar</button><button class="primary s-save">Salvar</button>
       </div>`;
     $('.modal-bg').classList.add('on');
-    m.querySelector('.s-cancel').addEventListener('click', closeModal);
-    m.querySelector('.s-token').addEventListener('click', () => openSetup());
-    m.querySelector('.s-save').addEventListener('click', () => {
-      prefs.dailyGoal = Math.max(1, Number(m.querySelector('.s-goal').value) || 8);
-      prefs.cardGoal = Math.max(0, Math.floor(Number(m.querySelector('.s-cards').value) || 0));
-      prefs.dayStart = Math.max(0, Math.min(23, Number(m.querySelector('.s-h0').value) || 0));
-      prefs.dayEnd = Math.max(prefs.dayStart + 1, Math.min(24, Number(m.querySelector('.s-h1').value) || 24));
-      prefs.dryRun = m.querySelector('.s-dry').checked;
+    const q = (x) => m.querySelector(x);
+    let token = '', shown = false;
+    const mask = (t) => (t.length > 10 ? `${t.slice(0, 4)}${'•'.repeat(Math.min(32, t.length - 8))}${t.slice(-4)}` : '•'.repeat(t.length));
+    const msg = (t, color = '#9aa3b2') => { q('.t-msg').textContent = t; q('.t-msg').style.color = color; };
+    local('/api/token').then((r) => {
+      token = r.token || '';
+      q('.t-val').value = mask(token);
+      q('.t-expd').value = r.expiresAt || '';
+      q('.t-exp').innerHTML = expLabel(r.expiresAt);
+      if (r.savedAt) q('.t-saved').textContent = ` · salvo em ${new Date(r.savedAt).toLocaleDateString('pt-BR')}`;
+    }).catch((e) => { q('.t-val').value = ''; msg(e.message, '#fca5a5'); });
+    q('.t-show').addEventListener('click', () => {
+      shown = !shown;
+      q('.t-val').value = shown ? token : mask(token);
+      q('.t-show').textContent = shown ? '🙈 Esconder' : '👁 Mostrar';
+      if (shown) setTimeout(() => { if (shown && q('.t-val')) { shown = false; q('.t-val').value = mask(token); q('.t-show').textContent = '👁 Mostrar'; } }, 30000);
+    });
+    q('.t-copy').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(token); msg('Token copiado para a área de transferência.', '#86efac'); }
+      catch { q('.t-val').value = token; q('.t-val').select(); msg('Não consegui copiar sozinho: o token está selecionado, use Ctrl+C.', '#fde68a'); }
+    });
+    q('.t-expd').addEventListener('change', async () => {
+      try {
+        const r = await local('/api/token-meta', { method: 'POST', body: { expiresAt: q('.t-expd').value || null } });
+        q('.t-exp').innerHTML = expLabel(r.expiresAt);
+        msg(r.expiresAt ? 'Validade salva. O app avisa quando faltar 7 dias.' : 'Validade removida.', '#86efac');
+      } catch (e) { msg(e.message, '#fca5a5'); }
+    });
+    q('.t-test').addEventListener('click', async () => {
+      msg('Testando…');
+      try { const r = await local('/api/test'); msg(`✓ Token válido · ${r.me.name} (${r.me.email})`, '#86efac'); }
+      catch (e) { msg(e.message, '#fca5a5'); }
+    });
+    q('.s-cancel').addEventListener('click', closeModal);
+    q('.s-token').addEventListener('click', () => openSetup());
+    q('.s-save').addEventListener('click', () => {
+      prefs.dailyGoal = Math.max(1, Number(q('.s-goal').value) || 8);
+      prefs.cardGoal = Math.max(0, Math.floor(Number(q('.s-cards').value) || 0));
+      prefs.dayStart = Math.max(0, Math.min(23, Number(q('.s-h0').value) || 0));
+      prefs.dayEnd = Math.max(prefs.dayStart + 1, Math.min(24, Number(q('.s-h1').value) || 24));
+      prefs.dryRun = q('.s-dry').checked;
       savePrefs(); closeModal(); render();
     });
   }
@@ -1529,7 +1586,10 @@
         <label>Organização<input class="c-org" value="${esc(S.org)}"></label>
         <label>Projeto<input class="c-proj" value="${esc(S.project)}"></label>
       </div>
-      <label>Token (PAT)<input class="c-pat" type="password" autocomplete="off" placeholder="${S.me ? 'Deixe vazio para manter o atual' : 'Cole aqui'}"></label>
+      <div class="row">
+        <label style="flex:3">Token (PAT)<input class="c-pat" type="password" autocomplete="off" placeholder="${S.me ? 'Deixe vazio para manter o atual' : 'Cole aqui'}"></label>
+        <label style="flex:1">Vence em (opcional)<input class="c-exp" type="date"></label>
+      </div>
       <div class="err"></div>
       <div class="foot">
         ${S.me ? '<button class="danger c-logout">Desconectar</button><span class="grow"></span><button class="c-cancel">Cancelar</button>' : ''}
@@ -1542,7 +1602,7 @@
       q('.err').textContent = '';
       q('.c-save').disabled = true; q('.c-save').textContent = 'Verificando…';
       try {
-        const r = await local('/api/config', { method: 'POST', body: { org: q('.c-org').value, project: q('.c-proj').value, pat: q('.c-pat').value } });
+        const r = await local('/api/config', { method: 'POST', body: { org: q('.c-org').value, project: q('.c-proj').value, pat: q('.c-pat').value, expiresAt: q('.c-exp').value || null } });
         const changed = r.org !== S.org || r.project !== S.project;
         S.me = r.me; S.org = r.org; S.project = r.project;
         if (changed) { prefs.pinned = []; prefs.known = []; savePrefs(); }
@@ -1577,6 +1637,8 @@
       if (!st.configured) { openSetup(); return; }
       S.me = st.me;
       await reload(true);
+      const n = daysLeft(st.expiresAt);
+      if (n != null && n <= 7) toast(n < 0 ? 'Seu token do Azure já venceu. Gere outro em ⚙ → Trocar token.' : `Seu token do Azure vence em ${n} dia(s). Gere outro em ⚙ antes que pare de funcionar.`, true);
     } catch (e) {
       toast(e.message, true);
     }
