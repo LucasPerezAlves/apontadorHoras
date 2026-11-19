@@ -175,25 +175,20 @@ A partir da versão **1.1.2** o app se atualiza sozinho. Quem estiver numa vers�
 
 ## Publicar uma versão nova
 
-O workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) faz tudo a partir de uma tag:
+O workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) gera o `.exe` e a release. Há dois jeitos de disparar:
 
-```bash
-git tag -a v1.2.0 -m "Resumo do que mudou (opcional, aparece nas novidades)"
-git push origin v1.2.0
-```
+1. **Pelo `main` (o jeito usado pelo Claude):** troque `"version"` em [`fonte/package.json`](fonte/package.json) para o número novo, escreva o resumo em [`novidades.md`](novidades.md) e envie para o `main`. O workflow cria a tag `v<versão>` e a release. Se a tag já existir, não faz nada.
+2. **Por tag:**
+   ```bash
+   git tag -a v1.2.0 -m "- Resumo do que mudou, em linguagem de usuário"
+   git push origin v1.2.0
+   ```
 
-O GitHub gera o `ApontadorHoras.exe` com essa versão, calcula o SHA-256, junta o `clockin-importar.user.js` e cria a release.
+O GitHub gera o `ApontadorHoras.exe` com essa versão (com ícone e o resumo embutido), calcula o SHA-256, junta o `clockin-importar.user.js` e cria a release. Em poucos minutos, quem tem o app aberto vê o aviso.
 
-**Resumo das novidades** (o que aparece na janela dentro do app): é a mensagem da tag anotada, então vale escrever em linguagem de usuário, uma linha por item:
+**Resumo das novidades** (a janela que abre no app depois de atualizar): vem do `novidades.md` (jeito 1) ou da mensagem da tag anotada (jeito 2), uma linha por item. Sem resumo, usa os títulos dos commits desde a versão anterior. A página da release mostra o resumo e a lista completa de commits.
 
-```bash
-git tag -a v1.2.0 -m "- Feriados da equipe para quem não usa o Clockin
-- Ícone novo, bem visível na barra de tarefas"
-```
-
-Sem mensagem (tag simples, `git tag v1.2.0`), o resumo são os títulos dos commits desde a tag anterior, sem os de documentação. A página da release mostra o resumo e a lista completa de commits. Em poucos minutos, quem tem o app aberto vê o aviso.
-
-Use sempre um número maior que o anterior (1.1.0 → 1.1.1 → 1.2.0). O app só oferece versões maiores que a instalada.
+Use sempre um número maior que o anterior (1.1.8 → 1.1.9 → 1.2.0). O app só oferece versões maiores que a instalada.
 
 ---
 

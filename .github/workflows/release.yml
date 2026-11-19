@@ -1,14 +1,26 @@
-# Publica uma versão nova: crie e envie uma tag (ex.: git tag v1.2.0 && git push origin v1.2.0).
-# O GitHub gera o ApontadorHoras.exe com essa versão, calcula o SHA-256 e cria a release.
-# Quem já tem o app vê o aviso "Versão nova disponível" e atualiza com um clique.
+# Publica uma versão nova do Apontador de Horas. Dois jeitos:
+#
+#  1. Trocar "version" em fonte/package.json (ex.: 1.2.0) e o resumo em novidades.md, e enviar para o main.
+#     O workflow cria a tag v1.2.0 e a release. É o jeito usado pelo Claude.
+#  2. Criar e enviar uma tag: git tag -a v1.2.0 -m "- resumo" && git push origin v1.2.0
+#
+# O GitHub gera o ApontadorHoras.exe com essa versão (com ícone e o resumo embutido), calcula o SHA-256
+# e cria a release. Quem já tem o app vê o aviso "Versão nova disponível" e atualiza com um clique.
 name: Release
 
 on:
   push:
     tags: ['v*', '[0-9]*']
+    branches: [main]
+    paths: ['fonte/package.json']
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -22,19 +34,47 @@ jobs:
         with:
           node-version: 22
 
-      - name: Montar as novidades
+      - name: Versão
+        id: v
         run: |
-          TAG="$GITHUB_REF_NAME"
-          PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
-          RANGE="${PREV:+$PREV..}$TAG"
-          # Resumo (vai para o modal "Novidades" dentro do app): a mensagem da tag anotada, se houver;
-          # senão, os títulos dos commits desde a tag anterior, sem os de documentação.
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="v$(node -p "require('./fonte/package.json').version")"
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              echo "A tag $TAG já existe: nada a publicar."
+              echo "skip=1" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Versão: $TAG"
+
+      - name: Montar as novidades
+        if: steps.v.outputs.skip != '1'
+        env:
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+            RANGE="${PREV:+$PREV..}$TAG"
+          else
+            PREV=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)
+            RANGE="${PREV:+$PREV..}HEAD"
+          fi
+          # Resumo (vai para a janela "Novidades" dentro do app):
+          #  - tag anotada: a mensagem da tag
+          #  - publicação pelo main: o arquivo novidades.md
+          #  - senão: os títulos dos commits desde a versão anterior, sem os de documentação
           MSG=""
-          if [ "$(git cat-file -t "$TAG")" = "tag" ]; then MSG=$(git tag -l --format='%(contents)' "$TAG" | sed '/^-----BEGIN/,$d'); fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$(git cat-file -t "$TAG")" = "tag" ]; then
+            MSG=$(git tag -l --format='%(contents)' "$TAG" | sed '/^-----BEGIN/,$d')
+          elif [ "$GITHUB_REF_TYPE" != "tag" ] && [ -f novidades.md ]; then
+            MSG=$(cat novidades.md)
+          fi
           if [ -n "$(printf '%s' "$MSG" | tr -d '[:space:]')" ]; then
             printf '%s\n' "$MSG" > fonte/novidades.md
           else
-            git log --no-merges --pretty='- %s' "$RANGE" | grep -viE '^- (update|merge|readme|docs?)\b' | head -10 > fonte/novidades.md || true
+            git log --no-merges --pretty='- %s' "$RANGE" | grep -viE '^- (update|merge|readme|docs?|versão)\b' | head -10 > fonte/novidades.md || true
           fi
           {
             cat fonte/novidades.md
@@ -47,9 +87,10 @@ jobs:
           echo "--- resumo:"; cat fonte/novidades.md
 
       - name: Gerar o .exe
+        if: steps.v.outputs.skip != '1'
         working-directory: fonte
         env:
-          APP_VERSION: ${{ github.ref_name }}
+          APP_VERSION: ${{ steps.v.outputs.tag }}
         run: |
           node build.js
           # Node base com o ícone e a descrição do app (o pkg usa via PKG_NODE_PATH)
@@ -60,9 +101,11 @@ jobs:
           cd dist && sha256sum ApontadorHoras.exe > ApontadorHoras.exe.sha256 && cat ApontadorHoras.exe.sha256
 
       - name: Publicar a release
+        if: steps.v.outputs.skip != '1'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$TAG" \
             fonte/dist/ApontadorHoras.exe fonte/dist/ApontadorHoras.exe.sha256 fonte/dist/clockin-importar.user.js \
-            --title "Apontador de Horas $GITHUB_REF_NAME" --notes-file notes.md --latest
+            --target "$GITHUB_SHA" --title "Apontador de Horas $TAG" --notes-file notes.md --latest

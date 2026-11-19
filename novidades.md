@@ -1,0 +1,3 @@
+- Abre na hora e as abas não ficam mais esperando
+- Salvar sessão bem mais rápido
+- Criar cards mostra os filhos que já existem e avisa antes de duplicar os seus
