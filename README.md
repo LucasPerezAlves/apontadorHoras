@@ -37,6 +37,7 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
 - **Arraste** no calendário para criar uma sessão (com encaixe de 15 em 15 min). **Clique** numa sessão para editar, mover para outro card ou excluir.
 - A barra lateral **Meus itens** mostra os cards com horas na semana, os fixados, os recentes e os fechados. **Clique duplo** num card abre a tela de apontamento.
 - Antes de gravar, o app confere se o horário se sobrepõe a outra sessão sua, como faz o hub.
+- **Feriados** aparecem com a etiqueta vermelha **"Feriado: nome"** na data, e a coluna fica destacada. Esses dias não contam nas metas de horas (a meta da semana desconta o feriado) nem na de cards. Os nacionais vêm calculados no app, inclusive a Sexta-feira Santa. Os da empresa chegam do **Clockin**: o script envia os feriados de cada semana que você abre lá, e o botão **📅 Feriados do ano** da sincronização lê o ano inteiro. Em **⚙ Configurações → Feriados** você adiciona feriados (por exemplo, o aniversário da cidade) ou desativa um que a empresa não folga.
 
 ### ✏ Nova sessão digitando o número do card
 

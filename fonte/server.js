@@ -16,6 +16,7 @@ const IS_WIN = process.platform === 'win32';
 const APP_DIR = path.join(process.env.APPDATA || path.join(os.homedir(), '.config'), 'ApontadorHoras');
 const DATA_DIR = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.cache'), 'ApontadorHoras');
 const CONFIG_FILE = path.join(APP_DIR, 'config.json');
+const HOLIDAYS_FILE = path.join(APP_DIR, 'feriados.json');
 const LOG_FILE = path.join(DATA_DIR, 'app.log');
 const APP_TOKEN = crypto.randomBytes(24).toString('hex');
 const NO_WINDOW = process.argv.includes('--no-window');
@@ -95,6 +96,30 @@ function loadConfig() {
   }
 }
 function saveConfig(c) { fs.writeFileSync(CONFIG_FILE, JSON.stringify(c, null, 2)); }
+
+// ───────── Feriados (vindos do Clockin ou adicionados à mão) ─────────
+// Lista de { date: 'AAAA-MM-DD', name, source: 'clockin' | 'manual', off?: true }
+// off: true desativa um feriado (por exemplo, um nacional que a empresa não folga).
+function loadHolidays() { try { const j = JSON.parse(fs.readFileSync(HOLIDAYS_FILE, 'utf8')); return Array.isArray(j) ? j : []; } catch { return []; } }
+function saveHolidays(list) { fs.writeFileSync(HOLIDAYS_FILE, JSON.stringify(list, null, 2)); }
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function upsertHolidays(items, source) {
+  const list = loadHolidays();
+  let changed = 0;
+  for (const h of items) {
+    if (!h || !DATE_RE.test(String(h.date))) continue;
+    const name = String(h.name || 'Feriado').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Feriado';
+    const i = list.findIndex((x) => x.date === h.date);
+    const next = { date: h.date, name, source, ...(h.off ? { off: true } : {}) };
+    if (i < 0) { list.push(next); changed++; }
+    else if (source === 'manual' || list[i].source !== 'manual') {
+      // o que você ajustou à mão não é sobrescrito pelo Clockin
+      if (JSON.stringify(list[i]) !== JSON.stringify(next)) { list[i] = next; changed++; }
+    }
+  }
+  if (changed) { list.sort((a, b) => a.date.localeCompare(b.date)); saveHolidays(list); }
+  return { changed, list };
+}
 
 // ───────── Azure DevOps ─────────
 function authHeader(token) { return 'Basic ' + Buffer.from(':' + token).toString('base64'); }
@@ -206,6 +231,14 @@ const server = http.createServer(async (req, res) => {
 
     // Ponte para o Clockin: só responde a quem manda o cabeçalho próprio (páginas comuns não conseguem
     // mandar cabeçalho customizado para cá sem CORS, e este endpoint não libera CORS).
+    if (url.pathname === '/api/holidays/import' && req.method === 'POST') {
+      if (req.headers['x-apontador-bridge'] !== 'clockin') return send(res, 403, { message: 'Acesso negado' });
+      const body = JSON.parse((await readBody(req, 256 * 1024)).toString() || '{}');
+      const items = (Array.isArray(body.holidays) ? body.holidays : []).slice(0, 400).map((h) => ({ date: h.date, name: h.name }));
+      const r = upsertHolidays(items, 'clockin');
+      if (r.changed) log('Feriados do Clockin atualizados:', r.changed);
+      return send(res, 200, { ok: true, changed: r.changed, total: r.list.length });
+    }
     if (url.pathname === '/api/export' && req.method === 'GET') {
       if (req.headers['x-apontador-bridge'] !== 'clockin') return send(res, 403, { message: 'Acesso negado' });
       if (!config || !pat) return send(res, 409, { message: 'Abra o Apontador de Horas e conecte seu token do Azure primeiro.' });
@@ -278,6 +311,17 @@ const server = http.createServer(async (req, res) => {
       if (!config || !pat) return send(res, 404, { message: 'Nenhum token salvo.' });
       try { const me = await whoAmI(config.org, pat); return send(res, 200, { ok: true, me }); }
       catch (e) { return send(res, 400, { message: e.message }); }
+    }
+    if (url.pathname === '/api/holidays' && req.method === 'GET') return send(res, 200, { holidays: loadHolidays() });
+    if (url.pathname === '/api/holidays' && req.method === 'POST') {
+      const body = JSON.parse((await readBody(req)).toString() || '{}');
+      if (body.remove && DATE_RE.test(String(body.date))) {
+        const list = loadHolidays().filter((x) => x.date !== body.date); saveHolidays(list);
+        return send(res, 200, { holidays: list });
+      }
+      if (!DATE_RE.test(String(body.date))) return send(res, 400, { message: 'Data inválida.' });
+      const r = upsertHolidays([{ date: body.date, name: body.name, off: !!body.off }], 'manual');
+      return send(res, 200, { holidays: r.list });
     }
     if (url.pathname === '/api/logout' && req.method === 'POST') {
       try { fs.unlinkSync(CONFIG_FILE); } catch { /* já não existia */ }

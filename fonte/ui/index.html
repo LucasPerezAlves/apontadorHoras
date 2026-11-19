@@ -176,6 +176,16 @@
   .seg3 button { border: 0; background: transparent; padding: 4px 10px; font-size: 12px; }
   .seg3 button.on { background: #2563eb; color: #fff; }
   .created li { margin: 3px 0; }
+  .hol { display: inline-block; margin-top: 3px; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 8px; border: 1px solid #b91c1c; color: #fca5a5; background: rgba(185,28,28,.15); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dh.isHol { background: rgba(185,28,28,.08); }
+  .col.isHol { background: repeating-linear-gradient(135deg, rgba(185,28,28,.06) 0 8px, transparent 8px 16px); }
+  .bars .b.hol i, .bars2 .b.hol i { opacity: .5; }
+  .xlab span.hol, .bars .b.hol span { color: #fca5a5; }
+  .holl { max-height: 180px; overflow: auto; border: 1px solid #2b2f38; border-radius: 8px; }
+  .holl .hr { display: flex; gap: 8px; align-items: center; padding: 4px 8px; border-bottom: 1px solid #23262e; font-size: 12.5px; }
+  .holl .hr:last-child { border-bottom: 0; }
+  .holl .hr.off { opacity: .5; text-decoration: line-through; }
+  .src { font-size: 10.5px; padding: 0 6px; border-radius: 6px; background: #262a33; color: #9aa3b2; }
   .tok { background: #14161c; border: 1px solid #2b2f38; border-radius: 10px; padding: 12px; }
   .tabs { display: flex; background: #0f1115; border: 1px solid #353a45; border-radius: 8px; padding: 2px; }
   .tabs button { border: 0; background: transparent; padding: 4px 10px; }
@@ -295,6 +305,35 @@
   function truncMin(d) { const x = new Date(d); x.setSeconds(0, 0); return x; }
   function fmtH(h) { const m = Math.round(h * 60); return `${Math.floor(m / 60)}h${pad(m % 60)}`; }
   function fmtRange(e) { const s = new Date(e.start); return `${pad(s.getDate())}/${pad(s.getMonth() + 1)} ${timeStr(s)}–${e.end ? timeStr(new Date(e.end)) : 'em andamento'}`; }
+
+  // ───────── Feriados ─────────
+  // Nacionais calculados aqui + os que vêm do Clockin (pelo script) ou adicionados à mão.
+  function easterOf(y) {
+    const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(y, mo - 1, da);
+  }
+  function nationalHolidays(y) {
+    const e = easterOf(y);
+    return [[`${y}-01-01`, 'Confraternização Universal'], [dateInput(addDays(e, -2)), 'Sexta-feira Santa'], [`${y}-04-21`, 'Tiradentes'],
+      [`${y}-05-01`, 'Dia do Trabalho'], [`${y}-09-07`, 'Independência do Brasil'], [`${y}-10-12`, 'Nossa Senhora Aparecida'],
+      [`${y}-11-02`, 'Finados'], [`${y}-11-15`, 'Proclamação da República'], [`${y}-11-20`, 'Dia da Consciência Negra'], [`${y}-12-25`, 'Natal']]
+      .map(([date, name]) => ({ date, name, source: 'nacional' }));
+  }
+  let HOL_SAVED = [];
+  const HOL = new Map();
+  function rebuildHolidays() {
+    HOL.clear();
+    const y = new Date().getFullYear();
+    for (const yy of [y - 1, y, y + 1]) for (const h of nationalHolidays(yy)) HOL.set(h.date, h);
+    for (const h of HOL_SAVED) { if (h.off) HOL.delete(h.date); else HOL.set(h.date, h); }
+  }
+  rebuildHolidays();
+  async function loadHolidays() { try { HOL_SAVED = (await local('/api/holidays')).holidays || []; } catch { /* mantém os nacionais */ } rebuildHolidays(); }
+  const holidayOf = (d) => HOL.get(dateInput(d)) || null;
+  const isWorkday = (d) => d.getDay() % 6 !== 0 && !holidayOf(d);
+  const workdaysIn = (a, b) => { let n = 0; for (let d = new Date(a); d < b; d = addDays(d, 1)) if (isWorkday(d)) n++; return n; };
 
   // ───────── Sessões (mesmo formato da extensão Work Session Hub) ─────────
   function decodeHtml(s) { return new DOMParser().parseFromString(`<textarea>${s}</textarea>`, 'text/html').querySelector('textarea').value; }
@@ -653,10 +692,10 @@
     const sameM = S.weekStart.getMonth() === end.getMonth();
     $('.week-label').textContent = `${S.weekStart.getDate()}${sameM ? '' : ' ' + MONTHS[S.weekStart.getMonth()]} – ${end.getDate()} ${MONTHS[end.getMonth()]} ${end.getFullYear()}`;
     const total = weekSegments().reduce((a, s) => a + s.hours, 0);
-    const goal = prefs.dailyGoal * 5;
+    const goal = prefs.dailyGoal * workdaysIn(S.weekStart, addDays(S.weekStart, 7));
     $('.goal-txt').textContent = `Semana: ${fmtH(total)} / ${fmtH(goal)}`;
     const bar = $('.goal .bar');
-    bar.querySelector('i').style.width = `${Math.min(100, (100 * total) / goal)}%`;
+    bar.querySelector('i').style.width = `${goal ? Math.min(100, (100 * total) / goal) : 100}%`;
     bar.classList.toggle('low', total < goal);
     $('.st-right').textContent = S.me ? `${S.me.name} · ${S.org}/${S.project} · ${S.items.size} itens` : '';
   }
@@ -803,10 +842,12 @@
     for (let d = 0; d < 7; d++) {
       const day = addDays(S.weekStart, d);
       const pct = Math.min(100, (100 * perDay[d]) / prefs.dailyGoal);
-      head += `<div class="dh${sameDay(day, today) ? ' today' : ''}${d >= 5 ? ' we' : ''}">
+      const hol = holidayOf(day), work = d < 5 && !hol;
+      head += `<div class="dh${sameDay(day, today) ? ' today' : ''}${d >= 5 ? ' we' : ''}${hol ? ' isHol' : ''}">
         <div class="n">${DAY_NAMES[d]} ${pad(day.getDate())}/${pad(day.getMonth() + 1)}</div>
-        <div class="tot"><span>${fmtH(perDay[d])}</span><span>${d < 5 && perDay[d] < prefs.dailyGoal ? `faltam ${fmtH(prefs.dailyGoal - perDay[d])}` : ''}</span></div>
-        ${d < 5 ? `<div class="mini${perDay[d] < prefs.dailyGoal ? ' low' : ''}"><i style="width:${pct}%"></i></div>` : ''}</div>`;
+        <div class="tot"><span>${fmtH(perDay[d])}</span><span>${work && perDay[d] < prefs.dailyGoal ? `faltam ${fmtH(prefs.dailyGoal - perDay[d])}` : ''}</span></div>
+        ${work ? `<div class="mini${perDay[d] < prefs.dailyGoal ? ' low' : ''}"><i style="width:${pct}%"></i></div>` : ''}
+        ${hol ? `<span class="hol" title="Feriado: ${esc(hol.name)}${hol.source === 'clockin' ? ' (Clockin)' : hol.source === 'manual' ? ' (adicionado por você)' : ' (nacional)'}">Feriado: ${esc(hol.name)}</span>` : ''}</div>`;
     }
     $('.cal-head').innerHTML = head;
 
@@ -835,7 +876,7 @@
           title="#${s.it.id} ${esc(s.it.title)}\n${timeStr(new Date(s.e.start))}–${realEnd} (${fmtH(entryHours(s.e))})${s.e.notes ? '\n' + esc(s.e.notes) : ''}">
           <b>#${s.it.id} ${esc(s.it.title)}</b>${hgt > 26 ? `${timeStr(s.a)}–${s.e.end ? timeStr(s.b) : 'agora'} · ${fmtH(s.hours)}` : ''}</div>`;
       }
-      cols += `<div class="col${d >= 5 ? ' we' : ''}${sameDay(day, today) ? ' today' : ''}" data-day="${d}" style="height:${height}px">${inner}</div>`;
+      cols += `<div class="col${d >= 5 ? ' we' : ''}${sameDay(day, today) ? ' today' : ''}${holidayOf(day) ? ' isHol' : ''}" data-day="${d}" style="height:${height}px">${inner}</div>`;
     }
     const grid = $('.grid');
     grid.dataset.h0 = h0; grid.dataset.h1 = h1;
@@ -851,7 +892,7 @@
   const monthStart = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
   const dayKey = (d) => dateInput(d);
   const P = { month: monthStart(new Date()), rows: [], loadedKey: '', loading: false, selDay: null, error: '' };
-  function weekdaysIn(a, b) { let n = 0; for (let d = new Date(a); d < b; d = addDays(d, 1)) if (d.getDay() % 6 !== 0) n++; return n; }
+  function weekdaysIn(a, b) { return workdaysIn(a, b); }
   const ymdW = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   async function getItemsWith(ids, fields) {
     const out = []; const uniq = [...new Set(ids.map(Number))].filter(Boolean);
@@ -931,7 +972,7 @@
     const isCur = m0.getTime() === monthStart(t0).getTime();
     html += `<div class="kpis">
       ${kpi('Hoje', `${pad(t0.getDate())}/${pad(t0.getMonth() + 1)}`, sToday, g)}
-      ${kpi('Semana', `${pad(w0.getDate())}/${pad(w0.getMonth() + 1)} – ${pad(addDays(w0, 6).getDate())}/${pad(addDays(w0, 6).getMonth() + 1)}`, sWeek, g * 5)}
+      ${kpi('Semana', `${pad(w0.getDate())}/${pad(w0.getMonth() + 1)} – ${pad(addDays(w0, 6).getDate())}/${pad(addDays(w0, 6).getMonth() + 1)}`, sWeek, g * workdaysIn(w0, addDays(w0, 7)))}
       ${kpi(isCur ? 'Mês' : 'Mês selecionado', `${weekdaysIn(m0, m1)} dias úteis`, sMonth, g * weekdaysIn(m0, m1))}
     </div>`;
     // Gráfico do mês
@@ -940,9 +981,9 @@
     const max = Math.max(g || 0, ...per, 1);
     html += `<div class="chart"><h3>Cards fechados com horas, por dia${P.selDay ? ' · clique de novo no dia para ver o mês todo' : ' · clique num dia para filtrar'}</h3><div class="bars">
       ${g ? `<div class="goal-line" style="bottom:${(100 * g) / max}%" title="Meta: ${g}/dia"></div>` : ''}
-      ${days.map((d, i) => `<div class="b${d.getDay() % 6 === 0 ? ' we' : ''}${g && per[i] >= g ? ' met' : ''}${P.selDay === dayKey(d) ? ' sel' : ''}" data-act="p-day" data-day="${dayKey(d)}" title="${pad(d.getDate())}/${pad(d.getMonth() + 1)}: ${per[i]} card(s)">
+      ${days.map((d, i) => `<div class="b${d.getDay() % 6 === 0 ? ' we' : ''}${holidayOf(d) ? ' hol' : ''}${g && per[i] >= g ? ' met' : ''}${P.selDay === dayKey(d) ? ' sel' : ''}" data-act="p-day" data-day="${dayKey(d)}" title="${pad(d.getDate())}/${pad(d.getMonth() + 1)}: ${per[i]} card(s)${holidayOf(d) ? ` · Feriado: ${esc(holidayOf(d).name)}` : ''}">
         ${per[i] ? `<span>${per[i]}</span>` : ''}<i style="height:${(100 * per[i]) / max}%"></i></div>`).join('')}
-      </div><div class="xlab">${days.map((d) => `<span class="${sameDay(d, t0) ? 'today' : ''}">${d.getDate()}</span>`).join('')}</div></div>`;
+      </div><div class="xlab">${days.map((d) => `<span class="${sameDay(d, t0) ? 'today' : holidayOf(d) ? 'hol' : ''}" title="${holidayOf(d) ? `Feriado: ${esc(holidayOf(d).name)}` : ''}">${d.getDate()}</span>`).join('')}</div></div>`;
     // Lista filtrada
     let a = m0, b = m1, label = 'no mês';
     if (P.selDay) { const [y, mo, dd] = P.selDay.split('-').map(Number); a = new Date(y, mo - 1, dd); b = addDays(a, 1); label = `em ${pad(dd)}/${pad(mo)}`; }
@@ -1301,8 +1342,8 @@
     const mx = Math.max(1, ...cr, ...fe);
     const t0 = new Date();
     html += `<div class="chart"><h3>Cards no mês</h3><div class="legend"><span><i style="background:#4f8cff"></i>Criados por você</span><span><i style="background:#17c964"></i>Fechados</span></div>
-      <div class="bars2">${days.map((d, i) => `<div class="b${d.getDay() % 6 === 0 ? ' we' : ''}" title="${pad(d.getDate())}/${pad(d.getMonth() + 1)}: ${cr[i]} criado(s), ${fe[i]} fechado(s)"><i class="c" style="height:${(100 * cr[i]) / mx}%"></i><i class="f" style="height:${(100 * fe[i]) / mx}%"></i></div>`).join('')}</div>
-      <div class="xlab">${days.map((d) => `<span class="${sameDay(d, t0) ? 'today' : ''}">${d.getDate()}</span>`).join('')}</div></div>`;
+      <div class="bars2">${days.map((d, i) => `<div class="b${d.getDay() % 6 === 0 ? ' we' : ''}${holidayOf(d) ? ' hol' : ''}" title="${pad(d.getDate())}/${pad(d.getMonth() + 1)}: ${cr[i]} criado(s), ${fe[i]} fechado(s)${holidayOf(d) ? ` · Feriado: ${esc(holidayOf(d).name)}` : ''}"><i class="c" style="height:${(100 * cr[i]) / mx}%"></i><i class="f" style="height:${(100 * fe[i]) / mx}%"></i></div>`).join('')}</div>
+      <div class="xlab">${days.map((d) => `<span class="${sameDay(d, t0) ? 'today' : holidayOf(d) ? 'hol' : ''}">${d.getDate()}</span>`).join('')}</div></div>`;
     // Status
     const pool = C.show === 'active' ? mine.filter((r) => !isDone(r.state)) : C.show === 'closedM' ? closedM : mine;
     const states = {}; for (const r of pool) states[r.state] = (states[r.state] || 0) + 1;
@@ -1843,6 +1884,16 @@
         <div class="t-msg" style="font-size:12px;min-height:16px;margin-top:6px"></div>
         <div style="font-size:12px"><a href="https://dev.azure.com/${encodeURIComponent(S.org)}/_usersSettings/tokens" target="_blank" rel="noopener">Gerenciar meus tokens no Azure ↗</a> <span class="muted">· o token fica criptografado só para o seu usuário do Windows</span></div>
       </div>
+      <div class="tok">
+        <div style="display:flex;align-items:center;gap:8px"><b>📅 Feriados</b><span class="muted" style="font-size:12px">· não contam nas metas de horas e de cards</span></div>
+        <div class="muted" style="font-size:12px;margin:4px 0 8px">Os nacionais já vêm no app. Os da empresa chegam sozinhos do Clockin sempre que você abre o Clockin com o script instalado (ou pelo botão "Importar feriados do ano" na sincronização).</div>
+        <div class="holl"></div>
+        <div class="row" style="align-items:flex-end;margin-top:8px">
+          <label style="flex:none">Data<input type="date" class="h-date"></label>
+          <label>Nome<input class="h-name" placeholder="Ex.: Aniversário da cidade" maxlength="80"></label>
+          <button class="h-add" style="flex:none">＋ Adicionar</button>
+        </div>
+      </div>
       <div class="row">
         <label>Meta diária (h)<input type="number" min="1" max="24" step="0.5" class="s-goal" value="${prefs.dailyGoal}"></label>
         <label>Cards fechados por dia<input type="number" min="0" max="50" step="1" class="s-cards" value="${prefs.cardGoal || ''}" placeholder="sem meta"></label>
@@ -1886,6 +1937,41 @@
     q('.t-test').addEventListener('click', async () => {
       msg('Testando…');
       try { const r = await local('/api/test'); msg(`✓ Token válido · ${r.me.name} (${r.me.email})`, '#86efac'); }
+      catch (e) { msg(e.message, '#fca5a5'); }
+    });
+    // Feriados
+    const y = new Date().getFullYear();
+    const drawHol = () => {
+      const saved = new Map(HOL_SAVED.map((h) => [h.date, h]));
+      const all = new Map();
+      for (const h of nationalHolidays(y)) all.set(h.date, h);
+      for (const h of HOL_SAVED) if (h.date.startsWith(String(y)) || h.date.startsWith(String(y + 1))) all.set(h.date, h);
+      const list = [...all.values()].filter((h) => h.date >= `${y}-01-01`).sort((a, b) => a.date.localeCompare(b.date));
+      const srcName = { nacional: 'nacional', clockin: 'Clockin', manual: 'você' };
+      q('.holl').innerHTML = list.map((h) => {
+        const [yy, mm, dd] = h.date.split('-');
+        const dow = new Date(+yy, +mm - 1, +dd).toLocaleDateString('pt-BR', { weekday: 'short' });
+        const isNat = nationalHolidays(+yy).some((n) => n.date === h.date);
+        return `<div class="hr${h.off ? ' off' : ''}"><span class="mono" style="width:86px">${dd}/${mm}/${yy}</span><span class="muted" style="width:38px">${esc(dow)}</span>
+          <span style="flex:1">${esc(h.name)}</span><span class="src">${esc(srcName[h.source] || h.source)}${h.off ? ' · desativado' : ''}</span>
+          ${h.off ? `<button class="ibtn h-on" data-d="${h.date}" title="Reativar">↺</button>` : `<button class="ibtn h-off" data-d="${h.date}" data-nat="${isNat ? 1 : ''}" data-src="${h.source}" title="${h.source === 'nacional' || isNat ? 'Desativar (a empresa não folga)' : 'Remover'}">✕</button>`}</div>`;
+      }).join('') || '<div class="hr muted">Nenhum feriado.</div>';
+      q('.holl').querySelectorAll('.h-off').forEach((b) => b.addEventListener('click', async () => {
+        const d = b.dataset.d, nat = nationalHolidays(+d.slice(0, 4)).find((n) => n.date === d);
+        const cur = HOL_SAVED.find((x) => x.date === d);
+        // nacional ou do Clockin: guarda como "desativado" para não voltar na próxima sincronização
+        const body = nat || b.dataset.src === 'clockin' ? { date: d, name: (cur && cur.name) || (nat && nat.name) || 'Feriado', off: true } : { date: d, remove: true };
+        HOL_SAVED = (await local('/api/holidays', { method: 'POST', body })).holidays; rebuildHolidays(); drawHol(); render();
+      }));
+      q('.holl').querySelectorAll('.h-on').forEach((b) => b.addEventListener('click', async () => {
+        HOL_SAVED = (await local('/api/holidays', { method: 'POST', body: { date: b.dataset.d, remove: true } })).holidays; rebuildHolidays(); drawHol(); render();
+      }));
+    };
+    loadHolidays().then(drawHol);
+    q('.h-add').addEventListener('click', async () => {
+      const d = q('.h-date').value, n = q('.h-name').value.trim();
+      if (!d) { q('.h-date').focus(); return; }
+      try { HOL_SAVED = (await local('/api/holidays', { method: 'POST', body: { date: d, name: n || 'Feriado' } })).holidays; rebuildHolidays(); drawHol(); render(); q('.h-name').value = ''; }
       catch (e) { msg(e.message, '#fca5a5'); }
     });
     q('.s-cancel').addEventListener('click', closeModal);
@@ -1968,6 +2054,7 @@
       S.org = st.org; S.project = st.project;
       if (!st.configured) { openSetup(); return; }
       S.me = st.me;
+      await loadHolidays();
       await reload(true);
       const n = daysLeft(st.expiresAt);
       if (n != null && n <= 7) toast(n < 0 ? 'Seu token do Azure já venceu. Gere outro em ⚙ → Trocar token.' : `Seu token do Azure vence em ${n} dia(s). Gere outro em ⚙ antes que pare de funcionar.`, true);
@@ -1996,6 +2083,7 @@
     syncing = true; syncLabel('↻ atualizando…');
     try {
       const scroll = $('.scroller')?.scrollTop;
+      await loadHolidays();
       await loadAll();
       const jobs = [];
       if (S.view === 'prod') jobs.push(loadProd(true, true));

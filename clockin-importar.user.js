@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Clockin ← Apontador de Horas
 // @namespace    lpalves.apontador-horas
-// @version      1.1.1
+// @version      1.2.0
 // @description  Sincroniza o Clockin com o Apontador de Horas: compara cada dia, mostra o que muda (editar, criar, excluir) e aplica pelo próprio Clockin.
 // @match        https://clockin.intranet.premiersoft.net/*
 // @grant        GM_xmlhttpRequest
@@ -194,6 +194,72 @@
     return found;
   }
 
+  // ───────── Feriados: o Clockin mostra "Feriado: nome" no título do dia ─────────
+  function weekFromLabel() {
+    const el = weekLabelEl();
+    if (!el) return null;
+    const [d, m] = el.textContent.trim().slice(0, 5).split('/').map(Number);
+    const now = new Date();
+    let w = new Date(now.getFullYear(), m - 1, d);
+    if (w - now > 180 * 864e5) w = new Date(now.getFullYear() - 1, m - 1, d);
+    if (now - w > 180 * 864e5) w = new Date(now.getFullYear() + 1, m - 1, d);
+    return w;
+  }
+  function scanHolidays(weekStart) {
+    const out = [];
+    if (!weekStart) return out;
+    for (const h of document.querySelectorAll('h4')) {
+      const m = h.textContent.match(DAY_RE);
+      if (!m) continue;
+      const fm = h.textContent.match(/Feriado:\s*(.+)$/i) || (h.parentElement && h.parentElement.textContent.match(/Feriado:\s*(.+?)\s*Total:/i));
+      if (!fm) continue;
+      for (let i = 0; i < 7; i++) {
+        const x = addDays(weekStart, i);
+        if (x.getDate() === Number(m[1]) && x.getMonth() === MONTHS_PT[m[2].toLowerCase()]) out.push({ date: ymd(x), name: norm(fm[1]) });
+      }
+    }
+    return out;
+  }
+  const sentHol = new Set();
+  function postHolidays(list) {
+    const fresh = list.filter((h) => !sentHol.has(`${h.date}|${h.name}`));
+    if (!fresh.length) return Promise.resolve(0);
+    return new Promise((resolve) => {
+      GM_xmlhttpRequest({
+        method: 'POST', url: 'http://127.0.0.1:47321/api/holidays/import', timeout: 15000,
+        headers: { 'X-Apontador-Bridge': 'clockin', 'Content-Type': 'application/json' },
+        data: JSON.stringify({ holidays: fresh }),
+        onload: (r) => { if (r.status === 200) fresh.forEach((h) => sentHol.add(`${h.date}|${h.name}`)); resolve(r.status === 200 ? fresh.length : 0); },
+        onerror: () => resolve(0), ontimeout: () => resolve(0),
+      });
+    });
+  }
+  // Sempre que a semana exibida muda, manda os feriados dela para o Apontador (se ele estiver aberto)
+  let lastLabel = '';
+  setInterval(() => {
+    if (location.pathname !== '/timer') return;
+    const el = weekLabelEl();
+    const key = el ? el.textContent + '|' + document.querySelectorAll('h4').length : '';
+    if (!el || key === lastLabel) return;
+    lastLabel = key;
+    postHolidays(scanHolidays(weekFromLabel()));
+  }, 3000);
+  async function importYearHolidays(year, progress) {
+    const all = [];
+    let w = startOfWeek(new Date(year, 0, 1));
+    const end = new Date(year + 1, 0, 1);
+    let i = 0;
+    while (w < end) {
+      progress(++i);
+      await gotoWeek(w);
+      all.push(...scanHolidays(w).filter((h) => h.date.startsWith(String(year))));
+      w = addDays(w, 7);
+    }
+    const uniq = [...new Map(all.map((h) => [h.date, h])).values()];
+    await postHolidays(uniq);
+    return uniq;
+  }
+
   // ───────── Plano por dia ─────────
   const descOf = (s) => `#${s.workItemId} ${s.title}${s.notes ? ` — ${s.notes}` : ''}`.slice(0, 500);
   function buildPlan(weekStart, sessions, clockinDays, project) {
@@ -365,6 +431,7 @@
     <h2>Sincronizar com o Apontador de Horas</h2>
     <button data-a="prev">‹</button><span class="wk"></span><button data-a="next">›</button>
     <button data-a="reload" title="Comparar de novo">↻</button>
+    <button data-a="hol" title="Lê os feriados de todas as semanas do ano no Clockin e manda para o Apontador">📅 Feriados do ano</button>
     <button data-a="close">✕</button>
   </div>
   <div class="proj">Projeto no Clockin: <input class="pj"></div>
@@ -490,6 +557,14 @@
     else if (a === 'prev') { st.week = addDays(st.week, -7); load(); }
     else if (a === 'next') { st.week = addDays(st.week, 7); load(); }
     else if (a === 'reload') load();
+    else if (a === 'hol') {
+      if (st.busy) return;
+      st.busy = true; updateGo();
+      const y = st.week.getFullYear();
+      importYearHolidays(y, (n) => msg(`Lendo os feriados de ${y} no Clockin… semana ${n}/53`))
+        .then(async (list) => { st.busy = false; await load(); msg(`${list.length} feriado(s) de ${y} enviados para o Apontador: ${list.map((h) => `${h.date.slice(8)}/${h.date.slice(5, 7)} ${h.name}`).join(' · ') || 'nenhum'}`); })
+        .catch((e) => { st.busy = false; msg(e.message, true); load(); });
+    }
     else if (a === 'go') go();
   });
 })();
