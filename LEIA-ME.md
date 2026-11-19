@@ -32,11 +32,15 @@ C:\ApontadorHoras\ApontadorHoras.exe --debug
 ```
 O console fica aberto mostrando o que acontece (o mesmo conteúdo vai para o `app.log`).
 
-## Lançar as mesmas horas no Clockin
+## Sincronizar o Clockin com o Apontador
 1. Instale a extensão **Tampermonkey** no Chrome. Em `chrome://extensions` → Tampermonkey → **Detalhes**, ligue **Permitir scripts de usuário**.
-2. No Tampermonkey: **+ (Criar novo script)**, apague o conteúdo, cole o arquivo `clockin-importar.user.js` e salve (Ctrl+S).
+2. No Tampermonkey: abra (ou crie) o script, apague o conteúdo, cole o arquivo `clockin-importar.user.js` e salve (Ctrl+S). Versão atual: 1.1.0.
 3. Deixe o **ApontadorHoras.exe aberto** e entre em https://clockin.intranet.premiersoft.net/timer
-4. Clique em **⬇ Importar do Apontador** (canto inferior direito), confira as sessões da semana e clique em **Lançar**.
-   - Projeto padrão: *Tucano | Alocação - Bionexo* (dá para trocar no campo da janela).
-   - Descrição: `#ID Título do item` (+ notas da sessão).
-   - Sessões já lançadas por esse botão aparecem como "já lançado" e ficam desmarcadas. Se você apagar uma no Clockin e quiser lançar de novo, clique com o botão direito nela para tirar a marcação.
+4. Clique em **⇅ Sincronizar com o Apontador**, escolha a semana e confira o plano de cada dia:
+   - **= igual**: já está certo, nada muda.
+   - **✎ editar**: um apontamento do Clockin é ajustado (horário/descrição) para ficar igual ao Apontador.
+   - **＋ criar**: sessão que existe no Apontador e falta no Clockin.
+   - **✕ excluir**: apontamento do projeto que não existe no Apontador (apaga de vez).
+   - **🔒 travado**: período bloqueado no Clockin, não dá para alterar.
+   - Dias sem sessões no Apontador e apontamentos de outros projetos não são alterados.
+5. Desmarque o que não quiser e clique em **Aplicar**. No fim ele compara de novo e mostra o resultado.
