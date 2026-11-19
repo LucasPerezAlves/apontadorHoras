@@ -28,7 +28,10 @@ jobs:
           APP_VERSION: ${{ github.ref_name }}
         run: |
           node build.js
-          npx --yes @yao-pkg/pkg@6.25.0 . -t node22-win-x64 --options use-system-ca --no-bytecode --public-packages "*" --public -o dist/ApontadorHoras.exe
+          # Node base com o ícone e a descrição do app (o pkg usa via PKG_NODE_PATH)
+          npm i --no-save --no-package-lock resedit@2 @yao-pkg/pkg-fetch@3.6.7
+          node icone-exe.js
+          PKG_NODE_PATH="$PWD/dist/node-base-win-x64.exe" npx --yes @yao-pkg/pkg@6.25.0 . -t node22-win-x64 --options use-system-ca --no-bytecode --public-packages "*" --public -o dist/ApontadorHoras.exe
           cp ../clockin-importar.user.js dist/
           cd dist && sha256sum ApontadorHoras.exe > ApontadorHoras.exe.sha256 && cat ApontadorHoras.exe.sha256
 

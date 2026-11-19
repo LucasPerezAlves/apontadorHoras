@@ -221,11 +221,15 @@ node build.js            # gera ui.js a partir de ui/index.html
 node server.js           # roda local e abre a janela do Edge
 node server.js --no-window --debug
 
-# gerar o .exe para Windows
-npm i -g @yao-pkg/pkg
-node build.js && pkg . -t node22-win-x64 --options use-system-ca \
-  --no-bytecode --public-packages "*" --public -o dist/ApontadorHoras.exe
+# gerar o .exe para Windows (com o ícone de icone/icone.ico)
+npm i --no-save resedit@2 @yao-pkg/pkg-fetch@3.6.7
+node build.js && node icone-exe.js
+PKG_NODE_PATH="$PWD/dist/node-base-win-x64.exe" npx @yao-pkg/pkg@6.25.0 . -t node22-win-x64 \
+  --options use-system-ca --no-bytecode --public-packages "*" --public -o dist/ApontadorHoras.exe
 ```
+
+- O ícone entra no Node base **antes** de empacotar (`icone-exe.js`, com o `resedit`). Editar o `.exe` depois de empacotado corromperia o conteúdo embutido. O mesmo script grava "Apontador de Horas" e a versão nas Propriedades do arquivo e no Gerenciador de Tarefas.
+- O ícone da janela e da barra de tarefas são os PNGs de `fonte/icone/`, embutidos pelo `build.js`. Para mudar o desenho, edite `icone.svg` e gere de novo os PNGs e o `.ico`.
 
 - `--no-bytecode`: o bytecode gerado no Linux é recusado pelo Node no Windows.
 - `--options use-system-ca`: confia nos certificados do Windows, necessário em redes corporativas com inspeção de TLS.
