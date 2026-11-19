@@ -143,6 +143,39 @@
   .range button.on { background: #2563eb; border-color: #2563eb; color: #fff; }
   .range .hint { margin-left: auto; font-size: 11px; color: #6b7280; }
   .item .new { font-size: 10px; padding: 0 5px; border-radius: 6px; background: #1e3a8a; color: #bfdbfe; margin-left: 4px; }
+  .cardsv { flex: 1; overflow: auto; padding: 14px 18px; display: none; }
+  .cardsv.on { display: block; }
+  .legend { display: flex; gap: 14px; font-size: 11.5px; color: #9aa3b2; margin: 0 0 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .bars2 { display: flex; align-items: flex-end; gap: 4px; height: 130px; border-bottom: 1px solid #2b2f38; }
+  .bars2 .b { flex: 1; display: flex; gap: 1px; align-items: flex-end; justify-content: center; height: 100%; }
+  .bars2 .b i { display: block; width: 40%; border-radius: 2px 2px 0 0; }
+  .bars2 .b i.c { background: #4f8cff; } .bars2 .b i.f { background: #17c964; }
+  .bars2 .b.we { opacity: .45; }
+  .chips2 { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+  .chips2 button { border-radius: 14px; font-size: 12px; padding: 3px 10px; }
+  .chips2 button.on { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .chips2 button b { margin-left: 4px; }
+  .ctool { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .ctool input[type=search] { max-width: 280px; }
+  .ctool select { width: auto; }
+  table.t tr.grp td { background: #15171d; font-weight: 600; color: #cbd5e1; border-top: 1px solid #2b2f38; }
+  table.t tr.crow { cursor: default; }
+  table.t tr.crow:hover td { background: #1f232b; }
+  .stp { font-size: 11px; padding: 1px 7px; border-radius: 8px; background: #262a33; color: #cbd5e1; white-space: nowrap; }
+  .stp.done { background: #14532d; color: #bbf7d0; } .stp.act { background: #1e3a8a; color: #bfdbfe; } .stp.new { background: #3f3f46; color: #e4e4e7; }
+  .ibtn { padding: 1px 6px; font-size: 12px; background: transparent; border-color: transparent; }
+  .ibtn:hover { background: #2f3440; }
+  .tpl { display: flex; gap: 8px; align-items: center; padding: 7px 8px; border: 1px solid #2b2f38; border-radius: 8px; background: #14161c; }
+  .tpl.off { opacity: .55; }
+  .tpl .sw2 { flex: none; display: flex; flex-direction: row; align-items: center; gap: 8px; width: 170px; cursor: pointer; font-weight: 600; font-size: 12.5px; color: #e6e8ec; }
+  .tpl .sw2 input { width: auto; }
+  .tpl input.tt { flex: 1; }
+  .tpl .badge2 { font-size: 10.5px; padding: 1px 6px; border-radius: 8px; background: #713f12; color: #fde68a; white-space: nowrap; }
+  .seg3 { display: inline-flex; background: #0f1115; border: 1px solid #353a45; border-radius: 8px; padding: 2px; }
+  .seg3 button { border: 0; background: transparent; padding: 4px 10px; font-size: 12px; }
+  .seg3 button.on { background: #2563eb; color: #fff; }
+  .created li { margin: 3px 0; }
   .tok { background: #14161c; border: 1px solid #2b2f38; border-radius: 10px; padding: 12px; }
   .tabs { display: flex; background: #0f1115; border: 1px solid #353a45; border-radius: 8px; padding: 2px; }
   .tabs button { border: 0; background: transparent; padding: 4px 10px; }
@@ -199,7 +232,7 @@
     <span class="week-label"></span>
     <button class="icon" data-act="next" title="Próxima semana">›</button>
     <button data-act="today">Hoje</button>
-    <span class="tabs"><button data-act="view-cal" class="on">📅 Calendário</button><button data-act="view-prod">📊 Produtividade</button><button data-act="view-timer">⏱ Cronômetro<span class="tdot"></span></button></span>
+    <span class="tabs"><button data-act="view-cal" class="on">📅 Calendário</button><button data-act="view-prod">📊 Produtividade</button><button data-act="view-timer">⏱ Cronômetro<span class="tdot"></span></button><button data-act="view-cards">🗂 Cards</button></span>
     <span class="grow"></span>
     <span class="badge test" style="display:none">MODO TESTE: nada é gravado</span>
     <span class="goal"><span class="goal-txt"></span><span class="bar"><i></i></span></span>
@@ -222,6 +255,7 @@
   </div>
   <div class="prod"></div>
   <div class="timerv"></div>
+  <div class="cardsv"></div>
   <div class="status"><span class="st-left">Arraste no calendário para criar uma sessão · clique numa sessão para editar</span><span class="grow"></span><span class="st-right"></span></div>
   <div class="loading">Carregando…</div>
   <div class="modal-bg"><div class="modal"></div></div>
@@ -689,7 +723,7 @@
   // Coloca um card da aba "recentes" na lista de trabalho do app (sem fixar), para poder apontar nele
   function adoptItem(id) {
     if (S.items.has(id)) return S.items.get(id);
-    const w = R.raw.get(id);
+    const w = R.raw.get(id) || C.raw.get(id);
     if (!w) return null;
     const it = toItem(w);
     S.items.set(id, it);
@@ -1196,18 +1230,282 @@
     document.title = `${tState() === 'run' ? '⏱' : '⏸'} ${hms(tMs())} · #${T.itemId} · Apontador`;
   }, 1000);
 
+
+  // ───────── Aba Cards ─────────
+  const CARD_FIELDS = ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.Parent', 'System.TeamProject', 'System.AssignedTo',
+    'System.CreatedDate', 'System.CreatedBy', 'System.ChangedDate', 'Microsoft.VSTS.Common.ClosedDate', 'System.AreaPath', 'System.IterationPath', F_WS];
+  const C = { month: monthStart(new Date()), rows: [], raw: new Map(), parents: new Map(), loading: false, error: '', key: '', state: null, q: '', show: 'active', group: true };
+  const isDone = (st) => /^(Closed|Done|Resolved|Removed)$/i.test(st || '');
+  const stClass = (st) => (isDone(st) ? 'done' : /^(New|To Do|Proposed)$/i.test(st || '') ? 'new' : 'act');
+  const who = (x) => (x && (x.uniqueName || x.displayName) || '').toLowerCase();
+  async function loadCards(force) {
+    const key = `${C.month.getFullYear()}-${C.month.getMonth()}|${S.project}`;
+    if (!force && C.key === key && C.rows.length) { renderCards(); return; }
+    C.loading = true; C.error = ''; renderCards();
+    try {
+      const base = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.ChangedDate] >= @Today - 120`;
+      let ids = [];
+      try { ids = await wiql(`${base} AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me OR [System.CreatedBy] = @Me) ORDER BY [System.ChangedDate] DESC`, S.project, 600); }
+      catch (e) { if (e.status === 401) throw e; ids = await wiql(`${base} AND ([System.AssignedTo] = @Me OR [System.CreatedBy] = @Me) ORDER BY [System.ChangedDate] DESC`, S.project, 600); }
+      const withMine = [...S.items.values()].filter((it) => it.entries.some(isMine)).map((it) => it.id);
+      const all = await getItemsWith([...ids, ...withMine, ...(S.hubIds || [])], CARD_FIELDS);
+      C.raw = new Map(all.map((w) => [w.id, w]));
+      C.rows = all.map((w) => {
+        const f = w.fields;
+        const entries = (parseEntries(f[F_WS]) || []).filter((e) => isMine(e) && e.start && e.end);
+        return {
+          id: w.id, title: f['System.Title'] || `#${w.id}`, type: f['System.WorkItemType'] || '', state: f['System.State'] || '',
+          parent: f['System.Parent'] || null, project: f['System.TeamProject'] || S.project,
+          assignedMe: who(f['System.AssignedTo']) === S.me.email, createdMe: who(f['System.CreatedBy']) === S.me.email,
+          created: f['System.CreatedDate'] ? new Date(f['System.CreatedDate']) : null,
+          changed: f['System.ChangedDate'] ? new Date(f['System.ChangedDate']) : null,
+          closed: f['Microsoft.VSTS.Common.ClosedDate'] && isDone(f['System.State']) ? new Date(f['Microsoft.VSTS.Common.ClosedDate']) : null,
+          entries, myHours: entries.reduce((a, e) => a + entryHours(e), 0),
+        };
+      });
+      const pids = [...new Set(C.rows.map((r) => r.parent).filter((p) => p && !C.raw.has(p)))];
+      const ps = pids.length ? await getItemsWith(pids, ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.TeamProject']) : [];
+      C.parents = new Map(ps.map((w) => [w.id, { id: w.id, title: w.fields['System.Title'], type: w.fields['System.WorkItemType'], state: w.fields['System.State'], project: w.fields['System.TeamProject'] }]));
+      for (const r of C.rows) if (!C.parents.has(r.id)) C.parents.set(r.id, { id: r.id, title: r.title, type: r.type, state: r.state, project: r.project });
+      C.key = key;
+    } catch (e) { C.error = e.message; }
+    finally { C.loading = false; renderCards(); }
+  }
+  function renderCards() {
+    const el = $('.cardsv');
+    if (S.view !== 'cards') return;
+    const m0 = C.month, m1 = new Date(m0.getFullYear(), m0.getMonth() + 1, 1);
+    const inM = (d) => d && d >= m0 && d < m1;
+    const monthName = m0.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    let html = `<div class="p-nav"><button class="icon" data-act="c-prev">‹</button><span class="mlabel">${esc(monthName[0].toUpperCase() + monthName.slice(1))}</span>
+      <button class="icon" data-act="c-next">›</button><button data-act="c-today">Mês atual</button><span class="grow"></span>
+      <button class="primary" data-act="c-new">＋ Criar cards</button></div>`;
+    if (C.loading && !C.rows.length) { el.innerHTML = html + '<div class="muted">Carregando seus cards…</div>'; return; }
+    if (C.error) html += `<div class="p-sec" style="color:#fca5a5">Não consegui carregar: ${esc(C.error)}</div>`;
+    // "Meus cards": atribuídos a mim, criados por mim ou com horas minhas
+    const mine = C.rows.filter((r) => r.assignedMe || r.createdMe || r.myHours > 0);
+    const hoursMonth = (r) => r.entries.reduce((a, e) => a + (inM(new Date(e.start)) ? entryHours(e) : 0), 0);
+    const active = mine.filter((r) => !isDone(r.state) && r.assignedMe);
+    const closedM = mine.filter((r) => inM(r.closed));
+    const createdM = mine.filter((r) => inM(r.created) && r.createdMe);
+    const hM = mine.reduce((a, r) => a + hoursMonth(r), 0);
+    html += `<div class="kpis">
+      <div class="kpi"><div class="l">Ativos com você</div><div class="v">${active.length}</div><div class="h">${fmtH(active.reduce((a, r) => a + r.myHours, 0))} apontadas neles</div></div>
+      <div class="kpi"><div class="l">Fechados no mês</div><div class="v">${closedM.length}</div><div class="h">${closedM.filter((r) => r.myHours > 0).length} com horas suas</div></div>
+      <div class="kpi"><div class="l">Criados por você no mês</div><div class="v">${createdM.length}</div><div class="h">${[...new Set(createdM.map((r) => r.parent).filter(Boolean))].length} US/issue(s) pai</div></div>
+      <div class="kpi"><div class="l">Horas apontadas no mês</div><div class="v" style="font-size:24px">${fmtH(hM)}</div><div class="h">em ${mine.filter((r) => hoursMonth(r) > 0).length} card(s)</div></div>
+    </div>`;
+    const days = []; for (let d = new Date(m0); d < m1; d = addDays(d, 1)) days.push(new Date(d));
+    const cr = days.map((d) => mine.filter((r) => r.createdMe && r.created && sameDay(r.created, d)).length);
+    const fe = days.map((d) => mine.filter((r) => r.closed && sameDay(r.closed, d)).length);
+    const mx = Math.max(1, ...cr, ...fe);
+    const t0 = new Date();
+    html += `<div class="chart"><h3>Cards no mês</h3><div class="legend"><span><i style="background:#4f8cff"></i>Criados por você</span><span><i style="background:#17c964"></i>Fechados</span></div>
+      <div class="bars2">${days.map((d, i) => `<div class="b${d.getDay() % 6 === 0 ? ' we' : ''}" title="${pad(d.getDate())}/${pad(d.getMonth() + 1)}: ${cr[i]} criado(s), ${fe[i]} fechado(s)"><i class="c" style="height:${(100 * cr[i]) / mx}%"></i><i class="f" style="height:${(100 * fe[i]) / mx}%"></i></div>`).join('')}</div>
+      <div class="xlab">${days.map((d) => `<span class="${sameDay(d, t0) ? 'today' : ''}">${d.getDate()}</span>`).join('')}</div></div>`;
+    // Status
+    const pool = C.show === 'active' ? mine.filter((r) => !isDone(r.state)) : C.show === 'closedM' ? closedM : mine;
+    const states = {}; for (const r of pool) states[r.state] = (states[r.state] || 0) + 1;
+    html += `<div class="ctool"><input type="search" class="c-q" placeholder="Filtrar por #ID ou título…" value="${esc(C.q)}">
+      <select class="c-show"><option value="active"${C.show === 'active' ? ' selected' : ''}>Não fechados</option><option value="closedM"${C.show === 'closedM' ? ' selected' : ''}>Fechados no mês</option><option value="all"${C.show === 'all' ? ' selected' : ''}>Todos (últimos 120 dias)</option></select>
+      <label class="chk"><input type="checkbox" class="c-group" ${C.group ? 'checked' : ''}> Agrupar por US/issue pai</label>
+      <span class="grow"></span><button class="icon" data-act="c-reload" title="Recarregar">↻</button></div>
+      <div class="chips2"><button data-act="c-state" data-st="" class="${C.state ? '' : 'on'}">Todos<b>${pool.length}</b></button>
+      ${Object.entries(states).sort((a, b) => b[1] - a[1]).map(([st, n]) => `<button data-act="c-state" data-st="${esc(st)}" class="${C.state === st ? 'on' : ''}">${esc(st)}<b>${n}</b></button>`).join('')}</div>`;
+    const f = C.q.trim().toLowerCase().replace(/^#/, '');
+    const rows = pool.filter((r) => (!C.state || r.state === C.state) && (!f || String(r.id).includes(f) || r.title.toLowerCase().includes(f) || String(r.parent || '').includes(f)))
+      .sort((a, b) => (b.changed || 0) - (a.changed || 0));
+    const dt = (d) => (d ? `${pad(d.getDate())}/${pad(d.getMonth() + 1)}` : '—');
+    const link = (r) => `<a href="https://dev.azure.com/${encodeURIComponent(S.org)}/${encodeURIComponent(r.project || S.project)}/_workitems/edit/${r.id}" target="_blank" rel="noopener">#${r.id}</a>`;
+    const rowHtml = (r) => `<tr class="crow" data-cid="${r.id}" title="Clique 2x para apontar horas">
+      <td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td><span class="stp ${stClass(r.state)}">${esc(r.state)}</span></td>
+      <td class="num">${r.myHours ? fmtH(r.myHours) : '—'}</td><td class="num">${hoursMonth(r) ? fmtH(hoursMonth(r)) : '—'}</td>
+      <td class="num" style="text-align:left">${dt(r.created)}</td><td class="num" style="text-align:left">${r.closed ? dt(r.closed) : dt(r.changed)}</td>
+      <td class="num" style="white-space:nowrap"><button class="ibtn" data-act="timer" data-id="${r.id}" title="Iniciar no cronômetro">▶</button></td></tr>`;
+    let body = '';
+    if (C.group) {
+      const groups = new Map();
+      for (const r of rows) { const k = r.parent || `self-${r.id}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+      for (const [k, list] of groups) {
+        const p = typeof k === 'number' ? C.parents.get(k) : null;
+        const h = list.reduce((a, r) => a + r.myHours, 0);
+        body += p
+          ? `<tr class="grp"><td colspan="8">${esc(p.type || 'Pai')} ${link(p)} ${esc(p.title || '')} <span class="stp ${stClass(p.state)}">${esc(p.state || '')}</span> <span class="muted" style="font-weight:400">· ${list.length} card(s) · ${fmtH(h)}</span></td>
+             <td class="num"><button class="ibtn" data-act="c-new" data-parent="${p.id}" title="Criar cards nesta US">＋ cards</button></td></tr>`
+          : `<tr class="grp"><td colspan="9"><span class="muted" style="font-weight:400">Sem pai</span></td></tr>`;
+        body += list.map(rowHtml).join('');
+      }
+    } else body = rows.map(rowHtml).join('');
+    html += `<div class="p-sec"><h3>${rows.length} card(s)${C.state ? ` em "${esc(C.state)}"` : ''}</h3>${rows.length ? `<table class="t"><tr><th>Card</th><th>Título</th><th>Tipo</th><th>Estado</th><th style="text-align:right">Suas horas</th><th style="text-align:right">No mês</th><th>Criado</th><th>Atualizado</th><th></th></tr>${body}</table>` : '<div class="muted">Nenhum card com esses filtros.</div>'}</div>`;
+    if (C.loading) html += '<div class="muted">Atualizando…</div>';
+    const scroll = el.scrollTop;
+    el.innerHTML = html;
+    el.scrollTop = scroll;
+    const q = el.querySelector('.c-q');
+    q.addEventListener('input', () => { C.q = q.value; const pos = q.selectionStart; renderCards(); const nq = $('.cardsv .c-q'); nq.focus(); nq.setSelectionRange(pos, pos); });
+    el.querySelector('.c-show').addEventListener('change', (e) => { C.show = e.target.value; C.state = null; renderCards(); });
+    el.querySelector('.c-group').addEventListener('change', (e) => { C.group = e.target.checked; renderCards(); });
+  }
+  // Card da aba Cards entra na lista de trabalho do app (para apontar/cronometrar)
+  function adoptCard(id) {
+    if (S.items.has(id)) return S.items.get(id);
+    const w = C.raw.get(id);
+    if (!w) return null;
+    const it = toItem(w); S.items.set(id, it); return it;
+  }
+
+  // ───────── Criar cards a partir da US/issue pai ─────────
+  const DEFAULT_TPL = [
+    { key: 'analise', label: '🔍 Análise', num: 'Análise da issue {id}', tit: 'Análise - {titulo}', on: true },
+    { key: 'dev', label: '💻 Desenvolvimento', num: 'Desenvolvimento da issue {id}', tit: 'Desenvolvimento - {titulo}', on: true },
+    { key: 'testes', label: '🧪 Testes', num: 'Testes da issue {id}', tit: 'Testes - {titulo}', on: true },
+    { key: 'commit', label: '📦 Commit', num: 'Commit das alterações {id}', tit: 'Commit das alterações - {titulo}', on: true },
+  ];
+  const tplList = () => DEFAULT_TPL.map((d) => ({ ...d, ...((prefs.cardTpl || {})[d.key] || {}) }));
+  const fillTpl = (pat, p) => pat.replace(/\{id\}/g, p ? p.id : '{id}').replace(/\{titulo\}/g, p ? p.title : '{titulo}').slice(0, 255);
+  async function openCreateCards(parentId) {
+    let parent = null, children = [];
+    let fmt = prefs.cardFmt || 'num';
+    const rows = tplList().map((t) => ({ ...t, title: '', edited: false }));
+    let extra = [];
+    let created = [];
+    const m = $('.modal');
+    m.classList.add('wide');
+    const patOf = (r) => (fmt === 'num' ? r.num : fmt === 'tit' ? r.tit : `${r.num} - {titulo}`);
+    const exists = (title) => children.some((c) => norm2(c.title) === norm2(title));
+    const norm2 = (x) => String(x || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const refreshTitles = () => { for (const r of rows) if (!r.edited) r.title = fillTpl(patOf(r), parent); };
+    const draw = () => {
+      refreshTitles();
+      const all = [...rows, ...extra];
+      const sel = all.filter((r) => r.on && r.title.trim());
+      m.innerHTML = `<h2>＋ Criar cards</h2>
+        <p style="font-size:12px">Informe a US (ou issue) pai e escolha os cards. Eles serão criados como <b>filhos</b> dela, na mesma área e iteração.</p>
+        <label>US / issue pai<input class="k-parent" list="k-parents" placeholder="Número ou título, ex.: 784761" value="${parent ? esc(`${parent.id} — ${parent.title}`) : parentId ? parentId : ''}" autocomplete="off"></label>
+        <datalist id="k-parents">${[...C.parents.values()].filter((p) => p && !isDone(p.state) && !/^(Issue|Task)$/i.test(p.type || '')).map((p) => `<option value="${esc(`${p.id} — ${p.title}`)}"></option>`).join('')}</datalist>
+        <div class="k-info" style="font-size:12px;color:#8b93a3;margin-top:-4px">${parent ? `✓ ${esc(parent.type)} · ${esc(parent.state)} · ${esc(parent.area)} · ${esc(parent.iteration)}${children.length ? ` · já tem ${children.length} filho(s)` : ''}` : ''}</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:12px;color:#9aa3b2">Formato do título</span>
+          <span class="seg3"><button data-f="num" class="${fmt === 'num' ? 'on' : ''}">Número da US</button><button data-f="tit" class="${fmt === 'tit' ? 'on' : ''}">Título da US</button><button data-f="both" class="${fmt === 'both' ? 'on' : ''}">Número + título</button></span>
+        </div>
+        <div class="tpls" style="display:flex;flex-direction:column;gap:6px">
+          ${all.map((r, i) => `<div class="tpl${r.on ? '' : ' off'}" data-i="${i}">
+            <label class="sw2"><input type="checkbox" class="k-on" ${r.on ? 'checked' : ''}> ${esc(r.label)}</label>
+            <input class="tt k-title" value="${esc(r.title)}" placeholder="Título do card">
+            ${parent && exists(r.title) ? '<span class="badge2" title="A US já tem um filho com esse título">já existe</span>' : ''}
+            ${r.key ? `<button class="ibtn k-star" title="Usar este título como padrão para os próximos">⭐</button>` : '<button class="ibtn k-del" title="Remover">🗑</button>'}
+          </div>`).join('')}
+        </div>
+        <div><button class="k-add">＋ Card personalizado</button> <span class="muted" style="font-size:11.5px">Use {id} e {titulo} no título para preencher com os dados da US.</span></div>
+        <div class="row" style="align-items:center">
+          <label style="flex:none">Tipo<select class="k-type">${['Issue', 'Task', 'Bug'].map((t) => `<option${(prefs.cardType || 'Issue') === t ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label class="chk" style="margin-top:16px"><input type="checkbox" class="k-me" ${prefs.cardAssignMe === false ? '' : 'checked'}> Atribuir a mim</label>
+        </div>
+        ${created.length ? `<div class="p-sec" style="margin:0"><h3>Criados</h3><ul class="created" style="margin:0;padding-left:18px">${created.map((c) => `<li>${c.error ? `<span style="color:#fca5a5">✗ ${esc(c.title)}: ${esc(c.error)}</span>` : `✓ <a href="https://dev.azure.com/${encodeURIComponent(S.org)}/${encodeURIComponent(parent.project)}/_workitems/edit/${c.id}" target="_blank" rel="noopener">#${c.id}</a> ${esc(c.title)} <button class="ibtn" data-act="timer" data-id="${c.id}" title="Iniciar no cronômetro">▶</button>`}</li>`).join('')}</ul></div>` : ''}
+        <div class="err"></div>
+        <div class="foot"><span class="grow"></span><button class="k-cancel">${created.length ? 'Fechar' : 'Cancelar'}</button>
+          <button class="primary k-go" ${parent && sel.length ? '' : 'disabled'}>${prefs.dryRun ? 'Validar' : 'Criar'} ${sel.length} card(s)</button></div>`;
+      bind();
+    };
+    let lookTimer = null, seq = 0;
+    const lookup = async (val) => {
+      const id = parseItemId(val);
+      if (!id) { parent = null; children = []; draw(); return; }
+      const my = ++seq;
+      m.querySelector('.k-info').textContent = `Procurando #${id}…`;
+      try {
+        const [w] = await getItemsWith([id], ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.TeamProject', 'System.AreaPath', 'System.IterationPath']);
+        if (my !== seq) return;
+        if (!w) { parent = null; m.querySelector('.k-info').textContent = `#${id} não encontrado no Azure.`; m.querySelector('.k-info').style.color = '#fca5a5'; return; }
+        const f = w.fields;
+        parent = { id: w.id, title: f['System.Title'], type: f['System.WorkItemType'], state: f['System.State'], project: f['System.TeamProject'], area: f['System.AreaPath'], iteration: f['System.IterationPath'] };
+        const kids = await wiql(`SELECT [System.Id] FROM WorkItems WHERE [System.Parent] = ${w.id}`, parent.project, 200).catch(() => []);
+        children = kids.length ? (await getItemsWith(kids, ['System.Id', 'System.Title', 'System.State'])).map((x) => ({ id: x.id, title: x.fields['System.Title'] })) : [];
+        for (const r of [...rows, ...extra]) if (!r.edited || r.on) { const t = r.edited ? r.title : fillTpl(patOf(r), parent); if (exists(t)) r.on = false; }
+        draw();
+        const inp = m.querySelector('.k-parent'); inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length);
+      } catch (e) { if (my === seq) { m.querySelector('.k-info').textContent = e.message; m.querySelector('.k-info').style.color = '#fca5a5'; } }
+    };
+    const bind = () => {
+      const all = [...rows, ...extra];
+      const pin = m.querySelector('.k-parent');
+      pin.addEventListener('input', () => { clearTimeout(lookTimer); lookTimer = setTimeout(() => lookup(pin.value), 450); });
+      pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(lookTimer); lookup(pin.value); } });
+      m.querySelectorAll('.seg3 button').forEach((b) => b.addEventListener('click', () => { fmt = b.dataset.f; prefs.cardFmt = fmt; savePrefs(); for (const r of rows) r.edited = false; draw(); }));
+      m.querySelectorAll('.tpl').forEach((row) => {
+        const r = all[Number(row.dataset.i)];
+        row.querySelector('.k-on').addEventListener('change', (e) => { r.on = e.target.checked; draw(); });
+        row.querySelector('.k-title').addEventListener('input', (e) => { r.title = e.target.value; r.edited = true; const go = m.querySelector('.k-go'); const n = [...rows, ...extra].filter((x) => x.on && x.title.trim()).length; go.textContent = `${prefs.dryRun ? 'Validar' : 'Criar'} ${n} card(s)`; go.disabled = !parent || !n; });
+        row.querySelector('.k-star')?.addEventListener('click', () => {
+          // guarda o título como padrão, trocando o número/título da US por {id}/{titulo}
+          let pat = r.title;
+          if (parent) { pat = pat.split(String(parent.title)).join('{titulo}').split(String(parent.id)).join('{id}'); }
+          prefs.cardTpl = prefs.cardTpl || {};
+          prefs.cardTpl[r.key] = { ...(prefs.cardTpl[r.key] || {}), [fmt === 'tit' ? 'tit' : 'num']: fmt === 'both' ? pat.replace(/ - \{titulo\}$/, '') : pat };
+          savePrefs(); toast(`Padrão de "${r.label.replace(/^\S+\s/, '')}" salvo: ${pat}`);
+        });
+        row.querySelector('.k-del')?.addEventListener('click', () => { extra = extra.filter((x) => x !== r); draw(); });
+      });
+      m.querySelector('.k-add').addEventListener('click', () => { extra.push({ label: '✏ Personalizado', title: parent ? `${parent.id} - ` : '', on: true, edited: true }); draw(); setTimeout(() => { const ins = m.querySelectorAll('.k-title'); ins[ins.length - 1]?.focus(); }, 0); });
+      m.querySelector('.k-type').addEventListener('change', (e) => { prefs.cardType = e.target.value; savePrefs(); });
+      m.querySelector('.k-me').addEventListener('change', (e) => { prefs.cardAssignMe = e.target.checked; savePrefs(); });
+      m.querySelector('.k-cancel').addEventListener('click', closeModal);
+      m.querySelector('.k-go').addEventListener('click', createAll);
+    };
+    const createAll = async () => {
+      const sel = [...rows, ...extra].filter((r) => r.on && r.title.trim());
+      if (!parent || !sel.length) return;
+      const type = m.querySelector('.k-type').value, me = m.querySelector('.k-me').checked;
+      const go = m.querySelector('.k-go'); go.disabled = true;
+      const errEl = m.querySelector('.err');
+      const body = (title) => JSON.stringify([
+        { op: 'add', path: '/fields/System.Title', value: title.trim() },
+        { op: 'add', path: '/fields/System.AreaPath', value: parent.area },
+        { op: 'add', path: '/fields/System.IterationPath', value: parent.iteration },
+        ...(me ? [{ op: 'add', path: '/fields/System.AssignedTo', value: S.me.email }] : []),
+        { op: 'add', path: '/relations/-', value: { rel: 'System.LinkTypes.Hierarchy-Reverse', url: `https://dev.azure.com/${S.org}/_apis/wit/workItems/${parent.id}` } },
+      ]);
+      const url = (validate) => `/${encodeURIComponent(parent.project)}/_apis/wit/workitems/$${encodeURIComponent(type)}?api-version=7.1${validate ? '&validateOnly=true' : ''}`;
+      // 1) valida o primeiro antes de criar qualquer um (mostra campo obrigatório faltando, permissão etc.)
+      errEl.textContent = 'Validando com o Azure…';
+      try { await api(url(true), { method: 'POST', headers: { 'Content-Type': 'application/json-patch+json' }, body: body(sel[0].title) }); }
+      catch (e) { errEl.textContent = `O Azure recusou: ${e.message}`; go.disabled = false; return; }
+      if (prefs.dryRun) { errEl.textContent = 'Modo teste: o Azure aceitaria criar estes cards. Nada foi criado.'; go.disabled = false; return; }
+      created = [];
+      for (const r of sel) {
+        errEl.textContent = `Criando "${r.title}"…`;
+        try {
+          const w = await api(url(false), { method: 'POST', headers: { 'Content-Type': 'application/json-patch+json' }, body: body(r.title) });
+          created.push({ id: w.id, title: r.title });
+          if (w.fields) S.items.set(w.id, toItem(w));
+          r.on = false;
+        } catch (e) { created.push({ title: r.title, error: e.message }); }
+      }
+      const ok = created.filter((c) => !c.error).length;
+      if (ok) { toast(`${ok} card(s) criado(s) em #${parent.id}.`); C.key = ''; R.key = ''; children.push(...created.filter((c) => !c.error)); }
+      draw();
+      if (S.view === 'cards') loadCards(true);
+    };
+    $('.modal-bg').classList.add('on');
+    draw();
+    if (parentId) lookup(String(parentId)); else setTimeout(() => m.querySelector('.k-parent')?.focus(), 0);
+  }
+
   function setView(v) {
     S.view = v;
     document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.act === `view-${v}`));
     $('.body').classList.toggle('off', v !== 'cal');
     $('.prod').classList.toggle('on', v === 'prod');
     $('.timerv').classList.toggle('on', v === 'timer');
+    $('.cardsv').classList.toggle('on', v === 'cards');
     $('.st-left').textContent = v === 'prod'
       ? 'Conta como feito: card fechado e com horas suas apontadas. O dia é o dia do fechamento.'
       : v === 'timer' ? 'Apontar grava o tempo até agora e continua contando · Parar/Apontar grava tudo e zera. O cronômetro continua salvo se você fechar o app.'
+      : v === 'cards' ? 'Seus cards: atribuídos a você, criados por você ou com horas suas · clique 2x num card para apontar'
       : 'Arraste no calendário para criar uma sessão · clique numa sessão para editar';
     if (v === 'prod') loadProd(true);
     if (v === 'timer') renderTimer();
+    if (v === 'cards') loadCards(false);
   }
 
   // ───────── Interações ─────────
@@ -1257,7 +1555,12 @@
       else if (act === 'settings') openSettings();
       else if (act === 'side-mine' || act === 'side-recent') setSide(act === 'side-mine' ? 'mine' : 'recent');
       else if (act === 'r-days') { R.days = Number(btn.dataset.days); document.querySelectorAll('.range button').forEach((b) => b.classList.toggle('on', b === btn)); loadRecent(true); }
-      else if (act === 'view-cal' || act === 'view-prod' || act === 'view-timer') setView(act.slice(5));
+      else if (act === 'view-cal' || act === 'view-prod' || act === 'view-timer' || act === 'view-cards') setView(act.slice(5));
+      else if (act === 'c-prev' || act === 'c-next') { C.month = new Date(C.month.getFullYear(), C.month.getMonth() + (act === 'c-prev' ? -1 : 1), 1); renderCards(); }
+      else if (act === 'c-today') { C.month = monthStart(new Date()); renderCards(); }
+      else if (act === 'c-reload') loadCards(true);
+      else if (act === 'c-state') { C.state = btn.dataset.st || null; renderCards(); }
+      else if (act === 'c-new') openCreateCards(btn.dataset.parent ? Number(btn.dataset.parent) : null);
       else if (act === 'p-prev' || act === 'p-next') { P.month = new Date(P.month.getFullYear(), P.month.getMonth() + (act === 'p-prev' ? -1 : 1), 1); P.selDay = null; loadProd(); }
       else if (act === 'p-today') { P.month = monthStart(new Date()); P.selDay = null; loadProd(); }
       else if (act === 'p-day') { const k = btn.dataset.day; P.selDay = P.selDay === k ? null : k; renderProd(); }
@@ -1302,6 +1605,8 @@
   });
 
   document.addEventListener('dblclick', (ev) => {
+    const crow = ev.target.closest('tr.crow');
+    if (crow && !ev.target.closest('a,button') && S.me) { ev.preventDefault(); const id = Number(crow.dataset.cid); adoptCard(id); quickLog(id); return; }
     const itemEl = ev.target.closest('.item');
     if (!itemEl || ev.target.closest('.acts') || !S.me) return;
     ev.preventDefault();

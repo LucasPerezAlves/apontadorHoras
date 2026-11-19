@@ -16,6 +16,7 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
   - [Criados recentemente](#-criados-recentemente)
   - [Produtividade](#-produtividade)
   - [Cronômetro com pausados](#-cronômetro-com-cards-pausados)
+  - [Cards: painel e criação automática](#-cards-painel-e-criação-automática)
   - [Configurações e token PAT](#-configurações-e-token-pat)
   - [Sincronização com o Clockin](#-sincronização-com-o-clockin)
 - [Instalação](#instalação)
@@ -76,6 +77,30 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
 ![Editar trechos](docs/img/editar-trechos.png)
 
 - **✎ Editar** permite ajustar, remover ou adicionar trechos, por exemplo quando você esqueceu de pausar. O app valida sobreposição, trechos no futuro e trechos com mais de 12h.
+
+### 🗂 Cards: painel e criação automática
+
+![Aba Cards](docs/img/cards.png)
+
+- A aba mostra os **seus cards**: atribuídos a você, criados por você ou com horas suas nos últimos 120 dias.
+- Indicadores: **ativos com você**, **fechados no mês**, **criados por você no mês** e **horas apontadas no mês**.
+- O gráfico do mês compara, dia a dia, os cards **criados** e os **fechados**.
+- Chips de **status** (Active, New, Closed…) com a contagem, que servem de filtro. O seletor alterna entre não fechados, fechados no mês e todos.
+- A tabela traz horas totais e do mês, data de criação e de atualização. Ela vem **agrupada pela US/issue pai**, com o total de horas de cada grupo.
+- **Clique duplo** numa linha abre a tela de apontamento. O ▶ inicia o cronômetro.
+
+![Criar cards](docs/img/criar-cards.png)
+
+- **＋ Criar cards** (ou **＋ cards** no grupo de uma US) abre a criação de cards filhos:
+  - Informe a **US/issue pai** pelo número ou pelo título (com sugestões). O app mostra tipo, estado, área, iteração e quantos filhos ela já tem.
+  - Escolha os modelos: **🔍 Análise**, **💻 Desenvolvimento**, **🧪 Testes** e **📦 Commit**.
+  - **Formato do título:** *Número da US* (`Análise da issue 1180`), *Título da US* (`Análise - Tela de pedidos…`) ou os dois.
+  - Os títulos podem ser **editados**. A ⭐ salva o título como **padrão** para as próximas vezes, com `{id}` e `{titulo}` preenchidos automaticamente.
+  - **＋ Card personalizado** adiciona cards com qualquer título.
+  - Um card que a US **já tem** com o mesmo título aparece marcado como "já existe" e vem desmarcado.
+  - Os cards são criados como **filhos** da US, na mesma área e iteração, com tipo (Issue/Task/Bug) e "Atribuir a mim" configuráveis.
+  - Antes de criar, o app faz uma validação no Azure. Se faltar um campo obrigatório ou uma permissão, nada é criado.
+  - Ao final, a lista mostra os cards criados com link e ▶ para já iniciar o cronômetro.
 
 ### ⚙ Configurações e token PAT
 
