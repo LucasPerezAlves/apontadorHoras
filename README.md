@@ -160,7 +160,7 @@ Um userscript (Tampermonkey) adiciona o botão **⇅ Sincronizar com o Apontador
 
 ## Atualizações
 
-A partir da versão **1.1.0** o app se atualiza sozinho. Quem estiver numa versão anterior precisa baixar o `.exe` uma última vez.
+A partir da versão **1.1.2** o app se atualiza sozinho. Quem estiver numa versão anterior (inclusive 1.1.0 e 1.1.1, cujo botão de atualizar tinha um defeito) precisa baixar o `.exe` uma última vez.
 
 - Ao abrir, e a cada 4 horas, o app consulta a última release deste repositório.
 - Se houver versão nova, aparece um aviso no topo da janela com **Ver novidades**, **Atualizar agora** e **Depois**. Em **⚙ Configurações** há o botão **Procurar atualizações**.

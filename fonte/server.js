@@ -562,11 +562,17 @@ async function applyUpdate() {
 }
 function restartInto(exe, old) {
   try { server.close(); server.closeAllConnections?.(); } catch { /* ignore */ }
-  const env = { ...process.env, AH_CHILD: '1' };
-  delete env.PKG_EXECPATH; // sobe o .exe novo como programa próprio, não como "node" deste
-  const child = spawn('cmd.exe', ['/d', '/s', '/c', `"${exe}" --after-update`], { detached: true, windowsHide: true, stdio: 'ignore', windowsVerbatimArguments: true, env });
+  // O pkg coloca PKG_EXECPATH=<este .exe> em todo processo filho, e um .exe do pkg que recebe o próprio
+  // caminho ali se comporta como "node" (tentaria rodar "--after-update" como script). Como o .exe novo
+  // fica no mesmo caminho, mandamos um valor qualquer: o pkg não sobrescreve e o filho roda o app normalmente.
+  const env = { ...process.env, AH_CHILD: '1', PKG_EXECPATH: 'apontador-atualizacao' };
+  let out = 'ignore';
+  try { out = fs.openSync(path.join(DATA_DIR, 'atualizacao.log'), 'w'); } catch { /* sem log de saída */ }
+  const child = spawn(exe, ['--after-update'], { detached: true, windowsHide: true, stdio: ['ignore', out, out], env });
   child.on('error', (e) => log('Atualização: falha ao iniciar a versão nova', e));
+  child.on('exit', (code) => log('Atualização: a versão nova saiu com código', code, '(saída em atualizacao.log)'));
   child.unref();
+  if (typeof out === 'number') try { fs.closeSync(out); } catch { /* ignore */ }
   const t0 = Date.now();
   const poll = async () => {
     try {
