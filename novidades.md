@@ -1,3 +1,3 @@
-- Abre na hora e as abas não ficam mais esperando
-- Salvar sessão bem mais rápido
-- Criar cards mostra os filhos que já existem e avisa antes de duplicar os seus
+- Atualizações chegam mais rápido: o app procura a cada 15 minutos
+- A versão nova é baixada sozinha; você escolhe Reiniciar agora ou Depois
+- Se escolher Depois (ou só fechar o app), ela é instalada ao fechar e o app já abre atualizado

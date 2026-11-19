@@ -164,12 +164,12 @@ Um userscript (Tampermonkey) adiciona o botão **⇅ Sincronizar com o Apontador
 
 A partir da versão **1.1.2** o app se atualiza sozinho. Quem estiver numa versão anterior (inclusive 1.1.0 e 1.1.1, cujo botão de atualizar tinha um defeito) precisa baixar o `.exe` uma última vez.
 
-- Ao abrir, e a cada 4 horas, o app consulta a última release deste repositório.
-- Se houver versão nova, aparece um aviso no topo da janela com **Ver novidades**, **Atualizar agora** e **Depois**. Em **⚙ Configurações** há o botão **Procurar atualizações**.
-- **Atualizar agora** baixa o `.exe` da release, confere o tamanho e o **SHA-256**, troca o arquivo e reabre o app na mesma janela. O cronômetro e as preferências continuam como estavam.
+- Ao abrir, e a cada 15 minutos, o app consulta a última release deste repositório. A janela pergunta ao app a cada minuto.
+- Achou versão nova, o app **baixa sozinho em segundo plano** e confere o tamanho e o **SHA-256**. Depois aparece o aviso **✅ Versão X pronta** com **Reiniciar agora** e **Depois**. Em **⚙ Configurações** há o botão **Procurar atualizações**.
+- **Reiniciar agora:** troca o arquivo e reabre o app na mesma janela. O cronômetro e as preferências continuam como estavam.
+- **Depois**, ou simplesmente fechar o app: a versão baixada é instalada **ao fechar**, e na próxima abertura o app já vem atualizado. O aviso volta depois de 2 horas se o app continuar aberto.
 - Se a versão nova não iniciar em 30 segundos, o app volta sozinho para a anterior e avisa.
 - Na primeira vez que uma versão nova abre, aparece a janela **🎉 Novidades da versão** com o resumo do que mudou. Ela aparece depois do botão de atualizar e também quando alguém troca o `.exe` à mão, uma vez por versão. O resumo fica dentro do `.exe`, então aparece mesmo sem internet.
-- Frequência: o app consulta o GitHub ao abrir e a cada 4 horas. A janela pergunta ao app 12 segundos depois de abrir e a cada 10 minutos.
 - O app precisa estar numa pasta em que o seu usuário possa gravar, como `C:\ApontadorHoras`. Em `Arquivos de Programas` o aviso aparece, mas a atualização pede para baixar manualmente.
 - O script do Clockin também se atualiza: o Tampermonkey busca a versão nova na última release (por padrão, uma vez por dia). Quem instalou uma versão anterior à 1.3.0 precisa reinstalar o script uma vez, para ele passar a saber de onde buscar.
 

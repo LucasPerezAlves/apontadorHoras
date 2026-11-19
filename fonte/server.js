@@ -310,13 +310,13 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { version: APP_VERSION, notes, page: `https://github.com/${UPDATE_REPO}/releases/tag/v${APP_VERSION}` });
     }
     if (url.pathname === '/api/update' && req.method === 'GET') {
-      if (url.searchParams.get('check') === '1') await checkUpdate();
+      if (url.searchParams.get('check') === '1') { await checkUpdate(); autoDownload(); }
       return send(res, 200, updateInfo());
     }
     if (url.pathname === '/api/update' && req.method === 'POST') {
       if (!updateAvailable()) return send(res, 400, { message: 'Você já está na versão mais recente.' });
       if (!(IS_WIN && process.pkg)) return send(res, 400, { message: 'A atualização automática só funciona no ApontadorHoras.exe.' });
-      applyUpdate().catch(() => { /* o erro fica em U.error */ });
+      applyUpdate().catch((e) => { U.state = 'error'; U.error = e.message; });
       return send(res, 202, updateInfo());
     }
     if (url.pathname === '/api/status') {
@@ -473,6 +473,7 @@ function openDefaultBrowser(url) {
 
 function shutdown() {
   log('Encerrando');
+  installOnExit();
   try { server.close(); } catch { /* ignore */ }
   setTimeout(() => process.exit(0), 300);
 }
@@ -493,7 +494,7 @@ function newer(a, b) {
 const updateAvailable = () => !!(U.latest && U.url && newer(U.latest, APP_VERSION));
 function updateInfo() {
   return {
-    current: APP_VERSION, latest: U.latest, available: updateAvailable(), notes: U.notes, state: U.state, progress: U.progress, error: U.error,
+    current: APP_VERSION, latest: U.latest, available: updateAvailable(), notes: U.notes, state: U.state === 'ready' && readyVersion !== U.latest ? 'idle' : U.state, progress: U.progress, error: U.error,
     checkedAt: U.checkedAt || null, checkError: U.checkError, canApply: !!(IS_WIN && process.pkg),
     page: `https://github.com/${UPDATE_REPO}/releases/${U.tag ? `tag/${encodeURIComponent(U.tag)}` : 'latest'}`,
   };
@@ -558,11 +559,18 @@ async function downloadTo(url, file) {
   } finally { await new Promise((ok) => out.end(ok)); }
   return { size: got, sha256: hash.digest('hex') };
 }
-async function applyUpdate() {
-  if (U.state === 'downloading' || U.state === 'restarting') return;
+// Baixa e confere a versão nova sem trocar nada: fica pronta (state 'ready') para reiniciar agora
+// ou ser instalada quando o app fechar.
+const UPD_PATHS = () => {
   const exe = process.execPath, dir = path.dirname(exe), base = path.basename(exe, path.extname(exe));
-  const tmp = path.join(dir, `${base}.new.exe`);
-  U.state = 'downloading'; U.progress = 0; U.error = '';
+  return { exe, dir, base, tmp: path.join(dir, `${base}.new.exe`) };
+};
+let readyVersion = null, lastAutoTry = { version: null, at: 0 };
+async function downloadUpdate() {
+  if (['downloading', 'restarting'].includes(U.state)) return;
+  if (U.state === 'ready' && readyVersion === U.latest) return;
+  const { dir, tmp } = UPD_PATHS();
+  U.state = 'downloading'; U.progress = 0; U.error = ''; readyVersion = null;
   try {
     try { fs.writeFileSync(tmp, ''); } catch { throw new Error(`Sem permissão para gravar em ${dir}. Deixe o app numa pasta sua (ex.: C:\\ApontadorHoras) ou baixe a versão nova pelo GitHub.`); }
     log('Atualização: baixando', U.url);
@@ -571,17 +579,47 @@ async function applyUpdate() {
     if (U.sha256 && got.sha256 !== U.sha256) throw new Error('O arquivo baixado não confere com o da release (SHA-256). Atualização cancelada.');
     const head = Buffer.alloc(2); const fd = fs.openSync(tmp, 'r'); fs.readSync(fd, head, 0, 2, 0); fs.closeSync(fd);
     if (head.toString('latin1') !== 'MZ' || got.size < 5e6) throw new Error('O arquivo baixado não é um .exe válido.');
-    U.progress = 1; U.state = 'restarting';
-    let old = path.join(dir, `${base}.old.exe`);
-    try { fs.rmSync(old, { force: true }); } catch { old = path.join(dir, `${base}.old-${Date.now()}.exe`); }
-    fs.renameSync(exe, old);
-    try { fs.renameSync(tmp, exe); } catch (e) { fs.renameSync(old, exe); throw e; }
-    log('Atualização: arquivo trocado; reiniciando na versão', U.latest);
-    setTimeout(() => restartInto(exe, old), 400); // deixa a resposta chegar na janela
+    U.progress = 1; U.state = 'ready'; readyVersion = U.latest;
+    log('Atualização: versão', U.latest, 'baixada e conferida; pronta para instalar');
   } catch (e) {
     U.state = 'error'; U.error = e.message; log('Atualização falhou', e);
     try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
   }
+}
+// Troca o .exe em uso pelo baixado (no Windows dá para renomear um .exe em execução)
+function swapExe() {
+  const { exe, dir, base, tmp } = UPD_PATHS();
+  let old = path.join(dir, `${base}.old.exe`);
+  try { fs.rmSync(old, { force: true }); } catch { old = path.join(dir, `${base}.old-${Date.now()}.exe`); }
+  fs.renameSync(exe, old);
+  try { fs.renameSync(tmp, exe); } catch (e) { fs.renameSync(old, exe); throw e; }
+  return { exe, old };
+}
+// "Reiniciar agora": baixa se ainda não baixou, troca o arquivo e sobe a versão nova
+async function applyUpdate() {
+  if (U.state === 'restarting') return;
+  if (!(U.state === 'ready' && readyVersion === U.latest)) await downloadUpdate();
+  if (U.state !== 'ready') return;
+  U.state = 'restarting';
+  try {
+    const { exe, old } = swapExe();
+    log('Atualização: arquivo trocado; reiniciando na versão', U.latest);
+    setTimeout(() => restartInto(exe, old), 400); // deixa a resposta chegar na janela
+  } catch (e) { U.state = 'error'; U.error = `Não consegui trocar o arquivo: ${e.message}`; log('Atualização falhou', e); }
+}
+// Ao fechar o app com uma versão pronta: instala para a próxima abertura já vir atualizada
+function installOnExit() {
+  if (U.state !== 'ready' || readyVersion !== U.latest) return;
+  try { swapExe(); log('Atualização: versão', U.latest, 'instalada ao fechar; abre atualizada na próxima vez'); }
+  catch (e) { log('Atualização: não consegui instalar ao fechar', e); }
+}
+// Achou versão nova: baixa sozinho (uma tentativa automática por versão a cada hora, se der erro)
+function autoDownload() {
+  if (!updateAvailable() || !(IS_WIN && process.pkg)) return;
+  if (['downloading', 'restarting'].includes(U.state) || (U.state === 'ready' && readyVersion === U.latest)) return;
+  if (lastAutoTry.version === U.latest && Date.now() - lastAutoTry.at < 3600e3) return;
+  lastAutoTry = { version: U.latest, at: Date.now() };
+  downloadUpdate();
 }
 function restartInto(exe, old) {
   try { server.close(); server.closeAllConnections?.(); } catch { /* ignore */ }
@@ -622,7 +660,9 @@ if (process.pkg) setTimeout(() => {
     }
   } catch { /* ignore */ }
 }, 20000);
-if (process.pkg) { setTimeout(checkUpdate, 3000); setInterval(checkUpdate, 4 * 3600e3); }
+// Procura versão nova ao abrir e a cada 15 min; achou, já baixa em segundo plano
+const checkAndFetch = async () => { await checkUpdate(); autoDownload(); };
+if (process.pkg) { setTimeout(checkAndFetch, 3000); setInterval(checkAndFetch, 15 * 60e3); }
 
 // ───────── Início ─────────
 loadConfig();

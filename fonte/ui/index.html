@@ -1821,7 +1821,15 @@
       else if (act === 'p-today') { P.month = monthStart(new Date()); P.selDay = null; loadProd(); }
       else if (act === 'u-go') doUpdate();
       else if (act === 'u-notes') openNotes();
-      else if (act === 'u-later') { if (UPD.info && UPD.info.state === 'error') { UPD.busy = false; UPD.info.state = 'idle'; } else if (UPD.info) { prefs.skipVersion = UPD.info.latest; savePrefs(); toast('Ok. Você pode atualizar depois em ⚙ Configurações.'); } renderUpd(); }
+      else if (act === 'u-later') {
+        const i = UPD.info;
+        if (i) {
+          UPD.laterFor = i.latest; UPD.busy = false;
+          if (i.state === 'ready') toast(`Ok. A versão ${i.latest} é instalada sozinha quando você fechar o app.`);
+          else if (i.state !== 'error') toast('Ok. Você pode atualizar depois em ⚙ Configurações.');
+        }
+        renderUpd();
+      }
       else if (act === 'p-hid') { P.showHidden = !P.showHidden; renderProd(); }
       else if (act === 'p-hide') { if (!prefs.hiddenIds.includes(id)) prefs.hiddenIds.push(id); savePrefs(); renderProd(); toast(`#${id} não aparece mais na lista "sem horas". Para reexibir, clique em Mostrar ao lado dos ocultos.`); }
       else if (act === 'p-unhide') { prefs.hiddenIds = prefs.hiddenIds.filter((x) => x !== id); savePrefs(); renderProd(); }
@@ -2219,7 +2227,9 @@
       if (!q('.s-updmsg')) return;
       if (!i) { q('.s-updmsg').textContent = 'Não consegui verificar.'; return; }
       q('.s-ver').textContent = i.current;
-      q('.s-updmsg').innerHTML = i.available ? `· <b style="color:#86efac">versão ${esc(i.latest)} disponível</b> ${i.canApply ? '<button class="primary s-updgo" style="font-size:12px">Atualizar agora</button>' : `<a href="${esc(i.page)}" target="_blank" rel="noopener">Baixar ↗</a>`}`
+      q('.s-updmsg').innerHTML = i.state === 'ready' && i.available ? `· <b style="color:#86efac">versão ${esc(i.latest)} pronta</b> <button class="primary s-updgo" style="font-size:12px">Reiniciar agora</button> <span class="muted">(ou instala sozinha ao fechar o app)</span>`
+        : i.state === 'downloading' ? `· baixando a versão ${esc(i.latest)}… ${Math.round((i.progress || 0) * 100)}%`
+        : i.available ? `· <b style="color:#86efac">versão ${esc(i.latest)} disponível</b> ${i.canApply ? '<button class="primary s-updgo" style="font-size:12px">Atualizar agora</button>' : `<a href="${esc(i.page)}" target="_blank" rel="noopener">Baixar ↗</a>`}`
         : i.checkError ? `· ${esc(i.checkError)}` : i.latest ? '· você está na versão mais recente' : '';
       if (q('.s-updgo')) q('.s-updgo').addEventListener('click', () => { closeModal(); prefs.skipVersion = ''; savePrefs(); doUpdate(); });
     };
@@ -2304,7 +2314,8 @@
 
   // ───────── Versão nova do app ─────────
   // O app consulta a última release no GitHub; aqui só mostra o aviso e acompanha a atualização.
-  const UPD = { info: null, busy: false };
+  const UPD = { info: null, busy: false, laterFor: null };
+  setInterval(() => { UPD.laterFor = null; renderUpd(); }, 2 * 3600e3); // lembra de novo depois de 2 h
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   async function checkAppUpdate(force) {
     try { UPD.info = await local('/api/update' + (force ? '?check=1' : '')); } catch { return null; }
@@ -2314,22 +2325,35 @@
   function renderUpd() {
     const el = $('.upd'), i = UPD.info;
     if (!el) return;
-    const working = i && (i.state === 'downloading' || i.state === 'restarting');
-    const show = i && (working || (UPD.busy && i.state === 'error') || (i.available && prefs.skipVersion !== i.latest));
-    el.hidden = !show; el.classList.toggle('err', !!(i && i.state === 'error' && UPD.busy));
-    if (!show) return;
-    if (i.state === 'downloading') {
-      el.innerHTML = `⬇ Baixando a versão ${esc(i.latest)}… ${Math.round((i.progress || 0) * 100)}%<span class="ubar"><i style="width:${Math.round((i.progress || 0) * 100)}%"></i></span><span class="grow"></span>`;
-    } else if (i.state === 'restarting') {
-      el.innerHTML = '🔄 Instalando e reabrindo o app… não feche esta janela.<span class="grow"></span>';
-    } else if (i.state === 'error' && UPD.busy) {
-      el.innerHTML = `⚠ Não deu para atualizar: ${esc(i.error)}<span class="grow"></span><button data-act="u-go">Tentar de novo</button><a href="${esc(i.page)}" target="_blank" rel="noopener">Baixar pelo GitHub ↗</a><button class="icon" data-act="u-later" title="Fechar">✕</button>`;
-    } else {
-      el.innerHTML = `🎉 <b>Versão ${esc(i.latest)} disponível</b><span style="opacity:.8">· você está na ${esc(i.current)}</span><span class="grow"></span>
+    const pct = Math.round(((i && i.progress) || 0) * 100);
+    const later = i && UPD.laterFor === i.latest;
+    let show = false, err = false, html = '';
+    if (!i) { /* nada */ }
+    else if (i.state === 'restarting') { show = true; html = '🔄 Instalando e reabrindo o app… não feche esta janela.<span class="grow"></span>'; }
+    else if (i.state === 'ready' && !later) {
+      show = true;
+      html = `✅ <b>Versão ${esc(i.latest)} pronta</b><span style="opacity:.8">· baixada e conferida. Reinicie para usar as novidades.</span><span class="grow"></span>
+        ${i.notes ? '<button data-act="u-notes">Ver novidades</button>' : ''}
+        <button class="primary" data-act="u-go">Reiniciar agora</button>
+        <button data-act="u-later" title="Ela é instalada sozinha quando você fechar o app">Depois</button>`;
+    } else if (i.state === 'downloading' && !later) {
+      show = true;
+      html = `⬇ Baixando a versão ${esc(i.latest)} em segundo plano… ${pct}%<span class="ubar"><i style="width:${pct}%"></i></span><span class="grow"></span><span style="opacity:.7;font-size:12px">pode continuar usando o app</span>`;
+    } else if (i.state === 'error' && i.available && !later) {
+      show = true; err = true;
+      html = `⚠ Não deu para baixar a versão ${esc(i.latest)}: ${esc(i.error)}<span class="grow"></span><button data-act="u-go">Tentar de novo</button><a href="${esc(i.page)}" target="_blank" rel="noopener">Baixar pelo GitHub ↗</a><button class="icon" data-act="u-later" title="Fechar">✕</button>`;
+    } else if (i.available && !later && prefs.skipVersion !== i.latest) {
+      show = true;
+      html = `🎉 <b>Versão ${esc(i.latest)} disponível</b><span style="opacity:.8">· você está na ${esc(i.current)}</span><span class="grow"></span>
         ${i.notes ? '<button data-act="u-notes">Ver novidades</button>' : ''}
         ${i.canApply ? '<button class="primary" data-act="u-go">Atualizar agora</button>' : `<a href="${esc(i.page)}" target="_blank" rel="noopener">Baixar ↗</a>`}
-        <button class="icon" data-act="u-later" title="Lembrar na próxima versão">Depois</button>`;
+        <button class="icon" data-act="u-later" title="Lembrar mais tarde">Depois</button>`;
     }
+    el.hidden = !show; el.classList.toggle('err', err);
+    if (show) el.innerHTML = html;
+    // enquanto baixa, acompanha de perto; depois, volta ao ritmo normal
+    clearTimeout(UPD.fast);
+    if (i && i.state === 'downloading' && !UPD.busy) UPD.fast = setTimeout(() => checkAppUpdate(), 1500);
   }
   function mdLite(t) {
     const out = []; let inList = false;
@@ -2349,7 +2373,7 @@
     const m = $('.modal');
     m.classList.remove('wide');
     m.innerHTML = `<h2>Novidades da versão ${esc(i.latest)}</h2><div class="notes">${mdLite(i.notes) || '<div class="muted">Sem descrição.</div>'}</div>
-      <div class="foot"><a href="${esc(i.page)}" target="_blank" rel="noopener">Ver no GitHub ↗</a><span class="grow"></span><button class="n-close">Fechar</button>${i.canApply ? '<button class="primary n-go">Atualizar agora</button>' : ''}</div>`;
+      <div class="foot"><a href="${esc(i.page)}" target="_blank" rel="noopener">Ver no GitHub ↗</a><span class="grow"></span><button class="n-close">Fechar</button>${i.canApply ? `<button class="primary n-go">${i.state === 'ready' ? 'Reiniciar agora' : 'Atualizar agora'}</button>` : ''}</div>`;
     $('.modal-bg').classList.add('on');
     m.querySelector('.n-close').addEventListener('click', closeModal);
     if (m.querySelector('.n-go')) m.querySelector('.n-go').addEventListener('click', () => { closeModal(); doUpdate(); });
@@ -2435,7 +2459,7 @@
   setInterval(() => { local('/api/ping').catch(() => {}); }, 5e3);
   setTimeout(() => checkAppUpdate(), 5e3);
   setTimeout(() => checkAppUpdate(), 15e3);
-  setInterval(() => { if (!UPD.busy) checkAppUpdate(); }, 10 * 60e3);
+  setInterval(() => { if (!UPD.busy) checkAppUpdate(); }, 60e3);
   // Ao fechar a janela, avisa o app para encerrar (libera o .exe)
   window.addEventListener('pagehide', () => { try { navigator.sendBeacon('/api/bye?t=' + encodeURIComponent(APP_TOKEN), ''); } catch { /* ignore */ } });
   setInterval(() => { if (S.me && !S.busy && !drag && !$('.modal-bg').classList.contains('on')) render(); }, 60e3);
