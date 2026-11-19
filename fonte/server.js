@@ -133,7 +133,7 @@ let teamHol = (() => { try { return JSON.parse(fs.readFileSync(TEAM_HOL_FILE, 'u
 let teamHolError = '';
 async function fetchTeamHolidays() {
   try {
-    const r = await fetch(`${TEAM_HOL_URL}?t=${Date.now()}`, { headers: { 'User-Agent': 'ApontadorHoras', 'Cache-Control': 'no-cache' } });
+    const r = await fetch(`${TEAM_HOL_URL}?t=${Date.now()}`, { signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'ApontadorHoras', 'Cache-Control': 'no-cache' } });
     if (r.status === 404) { teamHol = { feriados: [], fetchedAt: new Date().toISOString() }; teamHolError = ''; return; }
     if (!r.ok) throw new Error(`GitHub respondeu ${r.status}`);
     const j = await r.json();
@@ -411,6 +411,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 400, { message: 'Caminho inválido' });
       }
       const body = req.method === 'GET' ? undefined : await readBody(req);
+      const t0 = Date.now();
       const upstream = await adoFetch(target, {
         method: req.method,
         body,
@@ -423,6 +424,8 @@ const server = http.createServer(async (req, res) => {
         },
       });
       const buf = Buffer.from(await upstream.arrayBuffer());
+      const ms = Date.now() - t0;
+      if (ms > 1500) log(`Azure lento: ${ms} ms · ${req.method} ${rest.slice(0, 70)} · ${url.search.includes('ids=') ? `${(url.search.match(/ids=([\d%C,]+)/) || ['', ''])[1].split(/,|%2C/i).length} itens · ` : ''}${Math.round(buf.length / 1024)} KB`);
       let status = upstream.status;
       if (status === 203 || status === 302) status = 401; // Azure responde assim quando o token não vale
       if (status === 401) return send(res, 401, { message: 'O Azure recusou o token (expirado ou sem permissão). Abra ⚙ e informe um novo.' });
@@ -496,13 +499,14 @@ function updateInfo() {
   };
 }
 const GH_HEADERS = { 'User-Agent': 'ApontadorHoras', Accept: 'application/vnd.github+json' };
+const ghFetch = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSignal.timeout(10000) }); // GitHub lento não trava nada
 let checking = null;
 function checkUpdate() {
   if (checking) return checking;
   checking = (async () => {
     try {
       let tag = '', notes = '', url = '', sha = '', size = 0;
-      const r = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, { headers: GH_HEADERS });
+      const r = await ghFetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, { headers: GH_HEADERS });
       if (r.ok) {
         const j = await r.json();
         tag = j.tag_name || ''; notes = j.body || '';
@@ -510,11 +514,11 @@ function checkUpdate() {
         if (exe) { url = exe.browser_download_url; size = exe.size || 0; if (/^sha256:[a-f0-9]{64}$/i.test(exe.digest || '')) sha = exe.digest.slice(7).toLowerCase(); }
         const shaFile = (j.assets || []).find((a) => /^ApontadorHoras\.exe\.sha256$/i.test(a.name));
         if (!sha && shaFile) {
-          try { sha = (((await (await fetch(shaFile.browser_download_url, { headers: GH_HEADERS })).text()).match(/\b[a-f0-9]{64}\b/i)) || [''])[0].toLowerCase(); } catch { /* ignore */ }
+          try { sha = (((await (await ghFetch(shaFile.browser_download_url, { headers: GH_HEADERS })).text()).match(/\b[a-f0-9]{64}\b/i)) || [''])[0].toLowerCase(); } catch { /* ignore */ }
         }
       } else {
         // Limite da API do GitHub (muita gente na mesma rede): descobre a versão pelo redirecionamento da página
-        const r2 = await fetch(`https://github.com/${UPDATE_REPO}/releases/latest`, { redirect: 'manual', headers: { 'User-Agent': 'ApontadorHoras' } });
+        const r2 = await ghFetch(`https://github.com/${UPDATE_REPO}/releases/latest`, { redirect: 'manual', headers: { 'User-Agent': 'ApontadorHoras' } });
         const m = (r2.headers.get('location') || '').match(/\/releases\/tag\/([^/?#]+)/);
         if (!m) throw new Error(`GitHub respondeu ${r.status}`);
         tag = decodeURIComponent(m[1]);
@@ -531,7 +535,7 @@ function checkUpdate() {
 async function releaseNotesOf(version) {
   for (const tag of [`v${version}`, version]) {
     try {
-      const r = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/tags/${encodeURIComponent(tag)}`, { headers: GH_HEADERS });
+      const r = await ghFetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/tags/${encodeURIComponent(tag)}`, { headers: GH_HEADERS });
       if (!r.ok) continue;
       const body = String((await r.json()).body || '');
       return body.split(/\n## Todos os commits|\nQuem já usa o app/)[0].replace(/^## O que mudou\s*/m, '').trim();
@@ -618,7 +622,7 @@ if (process.pkg) setTimeout(() => {
     }
   } catch { /* ignore */ }
 }, 20000);
-if (process.pkg) { setTimeout(checkUpdate, 8000); setInterval(checkUpdate, 4 * 3600e3); }
+if (process.pkg) { setTimeout(checkUpdate, 3000); setInterval(checkUpdate, 4 * 3600e3); }
 
 // ───────── Início ─────────
 loadConfig();

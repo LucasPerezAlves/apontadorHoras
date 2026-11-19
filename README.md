@@ -212,6 +212,7 @@ Use sempre um número maior que o anterior (1.1.0 → 1.1.1 → 1.2.0). O app s�
 
 - **Sessões:** ficam no work item, em `Custom.WorkSessionEntry` (JSON). `Custom.ActualHours` recebe a soma das sessões fechadas. Cada gravação usa um teste de revisão (`/rev`), para não sobrescrever a alteração de outra pessoa.
 - **Lista do hub:** o documento `userWorkSessionIndex` no Extension Data Service é mantido atualizado. O app também corrige itens que estiverem faltando.
+- **Rápido para abrir:** o app guarda uma cópia dos dados da última sessão e mostra o calendário na hora; os dados do Azure chegam logo depois, sem travar a tela. As abas mostram o que já têm e atualizam por trás, e as consultas ao Azure rodam em paralelo.
 - **Atualização automática:** o app recarrega do Azure a cada 30 s com a janela visível e sempre que você volta para ela. Cards excluídos, fechados ou criados no Azure aparecem sozinhos nas contagens, nas listas e no calendário. A atualização é pulada enquanto você digita ou edita algo, e o rodapé mostra a hora da última atualização.
 - **Rollup:** quando o pai é uma Feature, o app recalcula `ActualHours` e `ChildActualHours` dela, como a extensão faz.
 
@@ -222,7 +223,7 @@ Use sempre um número maior que o anterior (1.1.0 → 1.1.1 → 1.2.0). O app s�
 - O proxy só aceita caminhos de `dev.azure.com/<org>/…` e da coleção `userWorkSessionIndex`.
 - O endpoint usado pelo Clockin (`/api/export`) só responde com o cabeçalho `X-Apontador-Bridge`. Sem CORS, nenhuma outra página consegue ler os dados.
 - A atualização só baixa da release deste repositório no GitHub, por HTTPS, e recusa o arquivo se o SHA-256 não bater com o publicado. Quem pode criar tags aqui pode publicar código para todos os usuários, então mantenha a conta do GitHub com verificação em duas etapas.
-- Log em `%LOCALAPPDATA%\ApontadorHoras\app.log`. Para ver o que acontece ao vivo, rode `ApontadorHoras.exe --debug`.
+- Log em `%LOCALAPPDATA%\ApontadorHoras\app.log`. Chamadas ao Azure que passam de 1,5 s aparecem como `Azure lento: … ms`, para medir a rede. Para ver o que acontece ao vivo, rode `ApontadorHoras.exe --debug`.
 
 ## Desenvolvimento e build
 

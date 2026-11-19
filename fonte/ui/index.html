@@ -442,15 +442,16 @@
     });
     return (j.workItems || []).map((w) => w.id);
   }
-  async function getItems(ids) {
-    const out = [];
+  // Busca em lotes de 200, até 4 lotes ao mesmo tempo (em vez de um esperando o outro)
+  async function inChunks(ids, fn, size = 200, conc = 4) {
     const uniq = [...new Set(ids.map(Number))].filter(Boolean);
-    for (let i = 0; i < uniq.length; i += 200) {
-      const chunk = uniq.slice(i, i + 200);
-      const j = await api(`/_apis/wit/workitems?ids=${chunk.join(',')}&fields=${FIELDS.join(',')}&errorPolicy=Omit&api-version=7.1`);
-      for (const w of j.value || []) if (w && w.fields) out.push(w);
-    }
+    const chunks = []; for (let i = 0; i < uniq.length; i += size) chunks.push(uniq.slice(i, i + size));
+    const out = []; let k = 0;
+    await Promise.all(Array.from({ length: Math.min(conc, chunks.length) }, async () => { while (k < chunks.length) out.push(...await fn(chunks[k++])); }));
     return out;
+  }
+  async function getItems(ids) {
+    return inChunks(ids, async (chunk) => ((await api(`/_apis/wit/workitems?ids=${chunk.join(',')}&fields=${FIELDS.join(',')}&errorPolicy=Omit&api-version=7.1`)).value || []).filter((w) => w && w.fields));
   }
   // ───────── Lista do Work Session Hub (para os itens aparecerem lá) ─────────
   async function idx(method, sub = '', body) {
@@ -493,8 +494,13 @@
       : `Horas salvas, mas não consegui atualizar a lista do Work Session Hub: ${e.message}`, true);
   }
   async function hubAdd(ids) {
-    if (prefs.dryRun || !ids.length) return;
-    try { await writeIndex((w) => [...w, ...ids.filter((id) => !w.includes(id))]); } catch (e) { indexWarn(e); }
+    // só mexe na lista do Work Session Hub se o item ainda não está nela
+    const need = ids.filter((id) => !(S.hubIds || []).includes(id));
+    if (prefs.dryRun || !need.length) return;
+    try {
+      const doc = await writeIndex((w) => [...w, ...need.filter((id) => !w.includes(id))]);
+      S.hubIds = doc && Array.isArray(doc.workItems) ? doc.workItems : [...(S.hubIds || []), ...need];
+    } catch (e) { indexWarn(e); }
   }
   async function hubRemoveIfEmpty(id) {
     if (prefs.dryRun) return;
@@ -530,22 +536,36 @@
   }
 
   async function loadAll() {
-    let ids = [];
     const base = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.ChangedDate] >= @Today - 45`;
-    try {
-      ids = await wiql(`${base} AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me) ORDER BY [System.ChangedDate] DESC`);
-    } catch (e) {
-      if (e.status === 401) throw e;
-      ids = await wiql(`${base} AND [System.AssignedTo] = @Me ORDER BY [System.ChangedDate] DESC`);
-    }
-    let hubIds = [];
-    try { hubIds = (await readIndex())?.workItems || []; S.hubIds = hubIds; } catch (e) { if (e.code !== 'EXT_SCOPE') console.warn('[Apontador] índice', e); }
-    const all = await getItems([...ids, ...prefs.pinned, ...prefs.known, ...hubIds]);
+    const qIds = wiql(`${base} AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me) ORDER BY [System.ChangedDate] DESC`)
+      .catch((e) => { if (e.status === 401) throw e; return wiql(`${base} AND [System.AssignedTo] = @Me ORDER BY [System.ChangedDate] DESC`); });
+    const qHub = readIndex().then((x) => x?.workItems || []).catch((e) => { if (e.code !== 'EXT_SCOPE') console.warn('[Apontador] índice', e); return null; });
+    // os itens já conhecidos não precisam esperar a consulta: começam a vir junto
+    const qKnown = getItems([...prefs.pinned, ...prefs.known, ...(S.hubIds || [])]);
+    const [ids, hubRes, known] = await Promise.all([qIds, qHub, qKnown]);
+    const hubIds = hubRes || S.hubIds || [];
+    if (hubRes) S.hubIds = hubRes;
+    const have = new Set(known.map((w) => w.id));
+    const all = known.concat(await getItems([...ids, ...hubIds].filter((id) => !have.has(Number(id)))));
     S.items = new Map(all.map((w) => [w.id, toItem(w)]));
+    saveSnapshot(all);
     rememberKnown();
     // Itens com sessões suas que o Work Session Hub ainda não lista (ex.: lançados por este app antes)
     const missing = [...S.items.values()].filter((it) => it.entries.some(isMine) && !hubIds.includes(it.id)).map((it) => it.id);
     if (missing.length) hubAdd(missing);
+  }
+  // Cópia dos itens da última sessão: o calendário aparece na hora ao abrir e atualiza por trás
+  const SNAP_KEY = 'apontadorHoras.snapshot.v1';
+  function saveSnapshot(all) {
+    try { localStorage.setItem(SNAP_KEY, JSON.stringify({ email: S.me.email, project: S.project, at: Date.now(), hubIds: S.hubIds || [], items: all.map((w) => ({ id: w.id, rev: w.rev, fields: w.fields })) })); } catch { /* cheio ou bloqueado: segue sem cópia */ }
+  }
+  function loadSnapshot() {
+    try {
+      const j = JSON.parse(localStorage.getItem(SNAP_KEY) || 'null');
+      if (!j || j.email !== S.me.email || j.project !== S.project || Date.now() - j.at > 14 * 864e5) return false;
+      S.items = new Map(j.items.map((w) => [w.id, toItem(w)])); S.hubIds = j.hubIds || [];
+      return true;
+    } catch { return false; }
   }
   function rememberKnown() {
     const mine = [...S.items.values()].filter((it) => it.entries.some(isMine)).map((it) => it.id);
@@ -560,9 +580,13 @@
   // Lê o item fresco, aplica a mudança e grava com teste de revisão (não sobrescreve alteração de outra pessoa).
   async function mutateItem(id, fn) {
     for (let attempt = 1; attempt <= 3; attempt++) {
-      const [w] = await getItems([id]);
-      if (!w) throw new Error(`Item #${id} não encontrado.`);
-      const it = toItem(w);
+      // acabou de ler este item (conferência de conflito)? usa a leitura; o teste de /rev garante que nada mudou
+      let it = attempt === 1 && S.freshIds && S.freshIds.has(id) && Date.now() - S.freshAt < 5000 ? S.items.get(id) : null;
+      if (!it) {
+        const [w] = await getItems([id]);
+        if (!w) throw new Error(`Item #${id} não encontrado.`);
+        it = toItem(w);
+      }
       if (it.unreadable) throw new Error(`Não consegui ler as sessões já gravadas no item #${id}. Nada foi alterado.`);
       const next = fn(it.entries.slice(), it);
       const ops = [
@@ -570,17 +594,21 @@
         { op: 'add', path: `/fields/${F_WS}`, value: JSON.stringify(next) },
         { op: 'add', path: `/fields/${F_AH}`, value: closedTotal(next) },
       ];
+      let saved = null;
       try {
-        await api(`/_apis/wit/workitems/${id}?api-version=7.1${prefs.dryRun ? '&validateOnly=true' : ''}`, {
+        saved = await api(`/_apis/wit/workitems/${id}?api-version=7.1${prefs.dryRun ? '&validateOnly=true' : ''}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json-patch+json' }, body: JSON.stringify(ops),
         });
       } catch (e) {
         const revConflict = e.status === 409 || e.status === 412 || /\brev\b|TF26071|TF401289|test operation/i.test(e.message);
+        if (revConflict && S.freshIds) S.freshIds.delete(id);
         if (attempt < 3 && revConflict) continue;
         throw e;
       }
       if (!prefs.dryRun) {
-        await refreshItem(id);
+        // a resposta da gravação já é o item atualizado: não precisa ler de novo
+        if (saved && saved.fields && saved.fields[F_WS] !== undefined) { const n = toItem(saved); S.items.set(n.id, n); } else await refreshItem(id);
+        if (S.freshIds) S.freshIds.delete(id);
         rollupFeature(it).catch((err) => console.warn('[Apontador] rollup da Feature falhou', err));
       }
       return next;
@@ -616,6 +644,7 @@
 
   async function assertNoConflict(candidate, excludeEntryId) {
     const fresh = await getItems([...S.items.keys()]);
+    S.freshAt = Date.now(); S.freshIds = new Set(fresh.map((w) => w.id));
     for (const w of fresh) {
       const it = toItem(w);
       S.items.set(it.id, it);
@@ -642,7 +671,7 @@
       return [...entries, entry];
     });
     if (!prefs.known.includes(itemId)) { prefs.known.unshift(itemId); savePrefs(); }
-    await hubAdd([itemId]);
+    hubAdd([itemId]); // em segundo plano: a sessão já está salva
   }
 
   async function updateSession(itemId, entryId, { start, end, notes }) {
@@ -787,21 +816,18 @@
   async function loadRecent(force, silent) {
     const key = `${R.days}|${S.project}`;
     if (!force && R.key === key) { renderRecent(); return; }
+    if (R.rows && R.rows.length && R.dataKey === key) { silent = true; renderRecent(); }
     if (!silent) { R.loading = true; R.error = ''; renderRecent(); }
     try {
       const ids = await wiql(`SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.CreatedDate] >= @Today - ${R.days - 1} AND ([System.CreatedBy] = @Me OR [System.AssignedTo] = @Me) ORDER BY [System.CreatedDate] DESC`, S.project, 200);
-      const out = []; const uniq = [...new Set(ids)];
-      for (let i = 0; i < uniq.length; i += 200) {
-        const j = await api(`/_apis/wit/workitems?ids=${uniq.slice(i, i + 200).join(',')}&fields=${RECENT_FIELDS.join(',')}&errorPolicy=Omit&api-version=7.1`);
-        for (const w of j.value || []) if (w && w.fields) out.push(w);
-      }
+      const out = await getItemsWith(ids, RECENT_FIELDS);
       R.raw = new Map(out.map((w) => [w.id, w]));
       R.rows = out.map((w) => {
         const it = toItem(w);
         const who = (x) => (x && (x.uniqueName || x.displayName) || '');
         return { ...it, created: new Date(w.fields['System.CreatedDate']), createdBy: who(w.fields['System.CreatedBy']), createdByName: w.fields['System.CreatedBy']?.displayName || '' };
       }).sort((a, b) => b.created - a.created);
-      R.key = key;
+      R.key = key; R.dataKey = key;
     } catch (e) { R.error = e.message; }
     finally { R.loading = false; renderRecent(); }
   }
@@ -1012,9 +1038,8 @@
   function weekdaysIn(a, b) { return workdaysIn(a, b); }
   const ymdW = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   async function getItemsWith(ids, fields) {
-    const out = []; const uniq = [...new Set(ids.map(Number))].filter(Boolean);
-    for (let i = 0; i < uniq.length; i += 200) {
-      const url = (fs) => `/_apis/wit/workitems?ids=${uniq.slice(i, i + 200).join(',')}&fields=${fs.join(',')}&errorPolicy=Omit&api-version=7.1`;
+    return inChunks(ids, async (chunk) => {
+      const url = (fs) => `/_apis/wit/workitems?ids=${chunk.join(',')}&fields=${fs.join(',')}&errorPolicy=Omit&api-version=7.1`;
       let j;
       try { j = await api(url(fields)); }
       catch (e) {
@@ -1022,9 +1047,8 @@
         if (e.status !== 400 || !fields.some((x) => OPTIONAL_FIELDS.includes(x))) throw e;
         j = await api(url(fields.filter((x) => !OPTIONAL_FIELDS.includes(x))));
       }
-      for (const w of j.value || []) if (w && w.fields) out.push(w);
-    }
-    return out;
+      return (j.value || []).filter((w) => w && w.fields);
+    });
   }
   function prodRange() {
     const m0 = P.month, m1 = new Date(m0.getFullYear(), m0.getMonth() + 1, 1);
@@ -1035,7 +1059,9 @@
     const { from, to } = prodRange();
     const key = `${from.toISOString()}|${to.toISOString()}`;
     if (!force && P.loadedKey === key) { renderProd(); return; }
-    if (!silent) { P.loading = true; P.error = ''; renderProd(); }
+    // já tem os dados deste período: mostra na hora e atualiza sem tela de carregando
+    if (P.rows.length && P.dataKey === key) { silent = true; renderProd(); }
+    if (!silent) { P.loading = true; P.error = ''; P.rows = []; renderProd(); }
     try {
       const a = ymdW(addDays(from, -1)), b = ymdW(addDays(to, 1));
       const q = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND (([Microsoft.VSTS.Common.ClosedDate] >= '${a}' AND [Microsoft.VSTS.Common.ClosedDate] < '${b}') OR ([Microsoft.VSTS.Common.StateChangeDate] >= '${a}' AND [Microsoft.VSTS.Common.StateChangeDate] < '${b}')) AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me OR [Microsoft.VSTS.Common.ClosedBy] = @Me)`;
@@ -1060,7 +1086,7 @@
         };
       });
       if (S.side !== 'recent') renderList();
-      P.loadedKey = key;
+      P.loadedKey = key; P.dataKey = key;
     } catch (e) { P.error = e.message; }
     finally { P.loading = false; renderProd(); }
   }
@@ -1417,6 +1443,7 @@
   async function loadCards(force, silent) {
     const key = `${C.month.getFullYear()}-${C.month.getMonth()}|${S.project}`;
     if (!force && C.key === key && C.rows.length) { renderCards(); return; }
+    if (C.rows.length && C.dataKey === key) { silent = true; renderCards(); }
     if (!silent) { C.loading = true; C.error = ''; renderCards(); }
     try {
       const base = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.ChangedDate] >= @Today - 120`;
@@ -1444,7 +1471,7 @@
       const ps = pids.length ? await getItemsWith(pids, ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.TeamProject']) : [];
       C.parents = new Map(ps.map((w) => [w.id, { id: w.id, title: w.fields['System.Title'], type: w.fields['System.WorkItemType'], state: w.fields['System.State'], project: w.fields['System.TeamProject'] }]));
       for (const r of C.rows) if (!C.parents.has(r.id)) C.parents.set(r.id, { id: r.id, title: r.title, type: r.type, state: r.state, project: r.project });
-      C.key = key;
+      C.key = key; C.dataKey = key;
     } catch (e) { C.error = e.message; }
     finally { C.loading = false; renderCards(); }
   }
@@ -1736,13 +1763,14 @@
   }
 
   // ───────── Interações ─────────
-  async function reload(scrollToNow) {
+  function scrollToNow() {
+    const h0 = Number($('.grid').dataset.h0 || 0);
+    $('.scroller').scrollTop = Math.max(0, (new Date().getHours() - h0 - 3) * PX_PER_HOUR);
+  }
+  async function reload(toNow) {
     const ok = await run('Carregando suas sessões…', loadAll);
     if (ok) { lastSync = Date.now(); syncLabel(`✓ atualizado às ${timeStr(new Date())}`); }
-    if (ok && scrollToNow) {
-      const h0 = Number($('.grid').dataset.h0 || 0);
-      $('.scroller').scrollTop = Math.max(0, (new Date().getHours() - h0 - 3) * PX_PER_HOUR);
-    }
+    if (ok && toNow) scrollToNow();
   }
 
   $('.q').addEventListener('input', (ev) => { S.filter = ev.target.value; renderList(); });
@@ -2387,8 +2415,15 @@
       S.org = st.org; S.project = st.project;
       if (!st.configured) { openSetup(); return; }
       S.me = st.me;
-      await loadHolidays();
-      await reload(true);
+      if (loadSnapshot()) {
+        // abre na hora com a última cópia; a atualização do Azure vem logo depois, sem travar a tela
+        render(); scrollToNow();
+        loadHolidays().then(() => { if (!editingNow()) render(); });
+        autoRefresh('abertura', true);
+      } else {
+        await loadHolidays();
+        await reload(true);
+      }
       showWhatsNew();
       const n = daysLeft(st.expiresAt);
       if (n != null && n <= 7) toast(n < 0 ? 'Seu token do Azure já venceu. Gere outro em ⚙ → Trocar token.' : `Seu token do Azure vence em ${n} dia(s). Gere outro em ⚙ antes que pare de funcionar.`, true);
@@ -2398,7 +2433,8 @@
   }
   // sinal de vida a cada 5 s: depois de uma atualização, o app sabe se a janela continua aberta
   setInterval(() => { local('/api/ping').catch(() => {}); }, 5e3);
-  setTimeout(() => checkAppUpdate(), 12e3);
+  setTimeout(() => checkAppUpdate(), 5e3);
+  setTimeout(() => checkAppUpdate(), 15e3);
   setInterval(() => { if (!UPD.busy) checkAppUpdate(); }, 10 * 60e3);
   // Ao fechar a janela, avisa o app para encerrar (libera o .exe)
   window.addEventListener('pagehide', () => { try { navigator.sendBeacon('/api/bye?t=' + encodeURIComponent(APP_TOKEN), ''); } catch { /* ignore */ } });
@@ -2415,13 +2451,12 @@
     return $('.modal-bg').classList.contains('on') || !!drag || S.busy
       || (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.value !== '' && !ae.readOnly);
   };
-  async function autoRefresh(why) {
-    if (!S.me || syncing || editingNow()) return;
+  async function autoRefresh(why, force) {
+    if (!S.me || syncing || (!force && editingNow())) return;
     syncing = true; syncLabel('↻ atualizando…');
     try {
       const scroll = $('.scroller')?.scrollTop;
-      await loadHolidays();
-      await loadAll();
+      await Promise.all([loadHolidays(), loadAll()]);
       const jobs = [];
       if (S.view === 'prod') jobs.push(loadProd(true, true));
       if (S.view === 'cards') jobs.push(loadCards(true, true));
