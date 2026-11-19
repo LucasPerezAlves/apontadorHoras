@@ -39,7 +39,13 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
 - **Arraste** no calendário para criar uma sessão (com encaixe de 15 em 15 min). **Clique** numa sessão para editar, mover para outro card ou excluir.
 - A barra lateral **Meus itens** mostra os cards com horas na semana, os fixados, os recentes e os fechados. **Clique duplo** num card abre a tela de apontamento.
 - Antes de gravar, o app confere se o horário se sobrepõe a outra sessão sua, como faz o hub.
-- **Feriados** aparecem com a etiqueta vermelha **"Feriado: nome"** na data, e a coluna fica destacada. Esses dias não contam nas metas de horas (a meta da semana desconta o feriado) nem na de cards. Os nacionais vêm calculados no app, inclusive a Sexta-feira Santa. Os da empresa chegam do **Clockin**: o script envia os feriados de cada semana que você abre lá, e o botão **📅 Feriados do ano** da sincronização lê o ano inteiro. Em **⚙ Configurações → Feriados** você adiciona feriados (por exemplo, o aniversário da cidade) ou desativa um que a empresa não folga.
+- **Feriados** aparecem com a etiqueta vermelha **"Feriado: nome"** na data, e a coluna fica destacada. Esses dias não contam nas metas de horas (a meta da semana desconta o feriado) nem na de cards. Os feriados vêm de quatro fontes, e ninguém precisa do Clockin para tê-los:
+  - **Nacionais:** calculados no app, inclusive a Sexta-feira Santa.
+  - **Lista da equipe:** o arquivo [`feriados.json`](feriados.json) deste repositório, com os feriados da empresa e da cidade. O app de todos baixa a lista ao abrir e a cada 6 horas, e guarda uma cópia para quando estiver sem rede. Para editar, use **📤 gerar lista para a equipe** em ⚙ Configurações → Feriados (junta a lista atual com os do seu Clockin e os que você adicionou), cole no `feriados.json` e faça o push. Não precisa de release nova.
+  - **Pontos facultativos:** Carnaval, Quarta-feira de Cinzas e Corpus Christi, que cada um liga em ⚙ Configurações.
+  - **Clockin**, para quem usa: o script envia os feriados de cada semana aberta lá, e o botão **📅 Feriados do ano** lê o ano inteiro.
+
+  Em **⚙ Configurações → Feriados** cada pessoa também adiciona os seus (por exemplo, o aniversário da cidade onde mora) ou desativa um dia em que não folga. O ajuste pessoal vale sobre todas as fontes.
 
 ### ✏ Nova sessão digitando o número do card
 

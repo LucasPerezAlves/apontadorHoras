@@ -124,6 +124,31 @@ function upsertHolidays(items, source) {
   return { changed, list };
 }
 
+// Lista da equipe: feriados.json no repositório do GitHub, para quem não tem Clockin.
+// Quem mantém o repositório edita o arquivo; os apps baixam ao abrir e a cada 6 h e guardam uma cópia.
+const TEAM_HOL_FILE = path.join(APP_DIR, 'feriados-equipe.json');
+const TEAM_HOL_URL = `https://raw.githubusercontent.com/${UPDATE_REPO}/main/feriados.json`;
+let teamHol = (() => { try { return JSON.parse(fs.readFileSync(TEAM_HOL_FILE, 'utf8')); } catch { return { feriados: [] }; } })();
+let teamHolError = '';
+async function fetchTeamHolidays() {
+  try {
+    const r = await fetch(`${TEAM_HOL_URL}?t=${Date.now()}`, { headers: { 'User-Agent': 'ApontadorHoras', 'Cache-Control': 'no-cache' } });
+    if (r.status === 404) { teamHol = { feriados: [], fetchedAt: new Date().toISOString() }; teamHolError = ''; return; }
+    if (!r.ok) throw new Error(`GitHub respondeu ${r.status}`);
+    const j = await r.json();
+    const list = (Array.isArray(j) ? j : j.feriados || [])
+      .filter((h) => h && DATE_RE.test(String(h.date)))
+      .map((h) => ({ date: h.date, name: String(h.name || 'Feriado').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Feriado' }));
+    teamHol = { feriados: list, atualizado: (j && j.atualizado) || null, fetchedAt: new Date().toISOString() };
+    teamHolError = '';
+    fs.writeFileSync(TEAM_HOL_FILE, JSON.stringify(teamHol, null, 2));
+    log('Feriados da equipe:', list.length);
+  } catch (e) { teamHolError = 'Não consegui baixar a lista da equipe agora (usando a última cópia).'; log('Feriados da equipe: falhou', e?.cause || e); }
+}
+setTimeout(fetchTeamHolidays, 3000);
+setInterval(fetchTeamHolidays, 6 * 3600e3);
+const holidaysPayload = (list) => ({ holidays: list, team: teamHol.feriados || [], teamInfo: { atualizado: teamHol.atualizado || null, fetchedAt: teamHol.fetchedAt || null, error: teamHolError, url: `https://github.com/${UPDATE_REPO}/blob/main/feriados.json` } });
+
 // ───────── Azure DevOps ─────────
 function authHeader(token) { return 'Basic ' + Buffer.from(':' + token).toString('base64'); }
 function netError(e) {
@@ -327,16 +352,19 @@ const server = http.createServer(async (req, res) => {
       try { const me = await whoAmI(config.org, pat); return send(res, 200, { ok: true, me }); }
       catch (e) { return send(res, 400, { message: e.message }); }
     }
-    if (url.pathname === '/api/holidays' && req.method === 'GET') return send(res, 200, { holidays: loadHolidays() });
+    if (url.pathname === '/api/holidays' && req.method === 'GET') {
+      if (url.searchParams.get('refresh') === '1') await fetchTeamHolidays();
+      return send(res, 200, holidaysPayload(loadHolidays()));
+    }
     if (url.pathname === '/api/holidays' && req.method === 'POST') {
       const body = JSON.parse((await readBody(req)).toString() || '{}');
       if (body.remove && DATE_RE.test(String(body.date))) {
         const list = loadHolidays().filter((x) => x.date !== body.date); saveHolidays(list);
-        return send(res, 200, { holidays: list });
+        return send(res, 200, holidaysPayload(list));
       }
       if (!DATE_RE.test(String(body.date))) return send(res, 400, { message: 'Data inválida.' });
       const r = upsertHolidays([{ date: body.date, name: body.name, off: !!body.off }], 'manual');
-      return send(res, 200, { holidays: r.list });
+      return send(res, 200, holidaysPayload(r.list));
     }
     if (url.pathname === '/api/logout' && req.method === 'POST') {
       try { fs.unlinkSync(CONFIG_FILE); } catch { /* já não existia */ }

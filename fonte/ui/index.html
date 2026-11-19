@@ -338,16 +338,32 @@
       [`${y}-11-02`, 'Finados'], [`${y}-11-15`, 'Proclamação da República'], [`${y}-11-20`, 'Dia da Consciência Negra'], [`${y}-12-25`, 'Natal']]
       .map(([date, name]) => ({ date, name, source: 'nacional' }));
   }
-  let HOL_SAVED = [];
+  // Pontos facultativos que muitas empresas dão (cada um liga nas Configurações)
+  const OPT_HOL = {
+    carnaval: { label: 'Carnaval (segunda e terça)', days: (e) => [[addDays(e, -48), 'Carnaval'], [addDays(e, -47), 'Carnaval']] },
+    cinzas: { label: 'Quarta-feira de Cinzas', days: (e) => [[addDays(e, -46), 'Quarta-feira de Cinzas']] },
+    corpus: { label: 'Corpus Christi', days: (e) => [[addDays(e, 60), 'Corpus Christi']] },
+  };
+  if (!Array.isArray(prefs.optHol)) prefs.optHol = [];
+  let HOL_SAVED = [], HOL_TEAM = [], HOL_TEAMINFO = {};
   const HOL = new Map();
+  // Ordem: nacionais → facultativos ligados → lista da equipe → Clockin e os seus (que podem desativar qualquer um)
+  function baseHolidays(y) {
+    const out = nationalHolidays(y);
+    const e = easterOf(y);
+    for (const k of prefs.optHol) if (OPT_HOL[k]) for (const [d, name] of OPT_HOL[k].days(e)) out.push({ date: dateInput(d), name, source: 'facultativo' });
+    for (const h of HOL_TEAM) if (h.date.startsWith(String(y))) out.push({ date: h.date, name: h.name, source: 'equipe' });
+    return out;
+  }
   function rebuildHolidays() {
     HOL.clear();
     const y = new Date().getFullYear();
-    for (const yy of [y - 1, y, y + 1]) for (const h of nationalHolidays(yy)) HOL.set(h.date, h);
+    for (const yy of [y - 1, y, y + 1]) for (const h of baseHolidays(yy)) HOL.set(h.date, h);
     for (const h of HOL_SAVED) { if (h.off) HOL.delete(h.date); else HOL.set(h.date, h); }
   }
   rebuildHolidays();
-  async function loadHolidays() { try { HOL_SAVED = (await local('/api/holidays')).holidays || []; } catch { /* mantém os nacionais */ } rebuildHolidays(); }
+  function applyHolidays(r) { if (!r) return; HOL_SAVED = r.holidays || []; if (r.team) HOL_TEAM = r.team; if (r.teamInfo) HOL_TEAMINFO = r.teamInfo; rebuildHolidays(); }
+  async function loadHolidays(refresh) { try { applyHolidays(await local('/api/holidays' + (refresh ? '?refresh=1' : ''))); } catch { /* mantém os nacionais */ } rebuildHolidays(); }
   const holidayOf = (d) => HOL.get(dateInput(d)) || null;
   const isWorkday = (d) => d.getDay() % 6 !== 0 && !holidayOf(d);
   const workdaysIn = (a, b) => { let n = 0; for (let d = new Date(a); d < b; d = addDays(d, 1)) if (isWorkday(d)) n++; return n; };
@@ -1999,7 +2015,9 @@
       </div>
       <div class="tok">
         <div style="display:flex;align-items:center;gap:8px"><b>📅 Feriados</b><span class="muted" style="font-size:12px">· não contam nas metas de horas e de cards</span></div>
-        <div class="muted" style="font-size:12px;margin:4px 0 8px">Os nacionais já vêm no app. Os da empresa chegam sozinhos do Clockin sempre que você abre o Clockin com o script instalado (ou pelo botão "Importar feriados do ano" na sincronização).</div>
+        <div class="muted" style="font-size:12px;margin:4px 0 6px">Os nacionais já vêm no app. Os da empresa e da cidade chegam pela <b>lista da equipe</b> (baixada sozinha do repositório) ou, para quem usa, pelo Clockin. Você também pode adicionar e desativar à mão.</div>
+        <div class="h-team muted" style="font-size:12px;margin-bottom:6px"></div>
+        <div class="h-opt" style="display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;margin-bottom:8px"><span class="muted">Pontos facultativos:</span>${Object.entries(OPT_HOL).map(([k, o]) => `<label class="chk" style="margin:0"><input type="checkbox" data-k="${k}" ${prefs.optHol.includes(k) ? 'checked' : ''}> ${esc(o.label)}</label>`).join('')}</div>
         <div class="holl"></div>
         <div class="row" style="align-items:flex-end;margin-top:8px">
           <label style="flex:none">Data<input type="date" class="h-date"></label>
@@ -2063,37 +2081,60 @@
     });
     // Feriados
     const y = new Date().getFullYear();
+    const holPost = async (body) => { applyHolidays(await local('/api/holidays', { method: 'POST', body })); drawHol(); render(); };
     const drawHol = () => {
-      const saved = new Map(HOL_SAVED.map((h) => [h.date, h]));
       const all = new Map();
-      for (const h of nationalHolidays(y)) all.set(h.date, h);
+      for (const yy of [y, y + 1]) for (const h of baseHolidays(yy)) all.set(h.date, h);
       for (const h of HOL_SAVED) if (h.date.startsWith(String(y)) || h.date.startsWith(String(y + 1))) all.set(h.date, h);
       const list = [...all.values()].filter((h) => h.date >= `${y}-01-01`).sort((a, b) => a.date.localeCompare(b.date));
-      const srcName = { nacional: 'nacional', clockin: 'Clockin', manual: 'você' };
+      const srcName = { nacional: 'nacional', facultativo: 'facultativo', equipe: 'equipe', clockin: 'Clockin', manual: 'você' };
+      const ti = HOL_TEAMINFO || {};
+      q('.h-team').innerHTML = `📋 Lista da equipe: <b>${HOL_TEAM.length}</b> feriado(s)${ti.atualizado ? ` · editada em ${esc(ti.atualizado.split('-').reverse().join('/'))}` : ''}${ti.error ? ` · <span style="color:#fde68a">${esc(ti.error)}</span>` : ''}
+        · <a href="#" class="h-refresh">↻ atualizar</a> · <a href="${esc(ti.url || '#')}" target="_blank" rel="noopener">ver no GitHub ↗</a> · <a href="#" class="h-export" title="Gera o conteúdo do feriados.json com a lista da equipe mais os feriados do Clockin e os que você adicionou">📤 gerar lista para a equipe</a>`;
       q('.holl').innerHTML = list.map((h) => {
         const [yy, mm, dd] = h.date.split('-');
         const dow = new Date(+yy, +mm - 1, +dd).toLocaleDateString('pt-BR', { weekday: 'short' });
-        const isNat = nationalHolidays(+yy).some((n) => n.date === h.date);
+        const inBase = baseHolidays(+yy).some((n) => n.date === h.date);
         return `<div class="hr${h.off ? ' off' : ''}"><span class="mono" style="width:86px">${dd}/${mm}/${yy}</span><span class="muted" style="width:38px">${esc(dow)}</span>
           <span style="flex:1">${esc(h.name)}</span><span class="src">${esc(srcName[h.source] || h.source)}${h.off ? ' · desativado' : ''}</span>
-          ${h.off ? `<button class="ibtn h-on" data-d="${h.date}" title="Reativar">↺</button>` : `<button class="ibtn h-off" data-d="${h.date}" data-nat="${isNat ? 1 : ''}" data-src="${h.source}" title="${h.source === 'nacional' || isNat ? 'Desativar (a empresa não folga)' : 'Remover'}">✕</button>`}</div>`;
+          ${h.off ? `<button class="ibtn h-on" data-d="${h.date}" title="Reativar">↺</button>` : `<button class="ibtn h-off" data-d="${h.date}" data-base="${inBase ? 1 : ''}" data-src="${h.source}" title="${inBase || h.source === 'clockin' ? 'Desativar (você não folga neste dia)' : 'Remover'}">✕</button>`}</div>`;
       }).join('') || '<div class="hr muted">Nenhum feriado.</div>';
-      q('.holl').querySelectorAll('.h-off').forEach((b) => b.addEventListener('click', async () => {
-        const d = b.dataset.d, nat = nationalHolidays(+d.slice(0, 4)).find((n) => n.date === d);
+      q('.holl').querySelectorAll('.h-off').forEach((b) => b.addEventListener('click', () => {
+        const d = b.dataset.d, base = baseHolidays(+d.slice(0, 4)).find((n) => n.date === d);
         const cur = HOL_SAVED.find((x) => x.date === d);
-        // nacional ou do Clockin: guarda como "desativado" para não voltar na próxima sincronização
-        const body = nat || b.dataset.src === 'clockin' ? { date: d, name: (cur && cur.name) || (nat && nat.name) || 'Feriado', off: true } : { date: d, remove: true };
-        HOL_SAVED = (await local('/api/holidays', { method: 'POST', body })).holidays; rebuildHolidays(); drawHol(); render();
+        // nacional, facultativo, da equipe ou do Clockin: guarda como "desativado" para não voltar na próxima atualização
+        holPost(base || b.dataset.src === 'clockin' ? { date: d, name: (cur && cur.name) || (base && base.name) || 'Feriado', off: true } : { date: d, remove: true }).catch((e) => msg(e.message, '#fca5a5'));
       }));
-      q('.holl').querySelectorAll('.h-on').forEach((b) => b.addEventListener('click', async () => {
-        HOL_SAVED = (await local('/api/holidays', { method: 'POST', body: { date: b.dataset.d, remove: true } })).holidays; rebuildHolidays(); drawHol(); render();
-      }));
+      q('.holl').querySelectorAll('.h-on').forEach((b) => b.addEventListener('click', () => holPost({ date: b.dataset.d, remove: true }).catch((e) => msg(e.message, '#fca5a5'))));
+      q('.h-refresh').addEventListener('click', async (ev) => { ev.preventDefault(); q('.h-team').textContent = '📋 Atualizando a lista da equipe…'; await loadHolidays(true); drawHol(); render(); });
+      q('.h-export').addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        const nat = new Set([y, y + 1].flatMap((yy) => nationalHolidays(yy).map((h) => h.date)));
+        const m = new Map(HOL_TEAM.map((h) => [h.date, { date: h.date, name: h.name }]));
+        for (const h of HOL_SAVED) {
+          if (h.off) m.delete(h.date);
+          else if ((h.source === 'clockin' || h.source === 'manual') && !nat.has(h.date) && h.date >= `${y}-01-01`) m.set(h.date, { date: h.date, name: h.name });
+        }
+        const out = { atualizado: dateInput(new Date()), feriados: [...m.values()].sort((a, b) => a.date.localeCompare(b.date)) };
+        const text = JSON.stringify(out, null, 2) + '\n';
+        let copied = false;
+        try { await navigator.clipboard.writeText(text); copied = true; } catch { /* mostra para copiar à mão */ }
+        let box = q('.h-exp');
+        if (!box) { box = document.createElement('div'); box.className = 'h-exp'; q('.holl').before(box); }
+        box.innerHTML = `<div style="font-size:12px;margin:6px 0">${copied ? '✓ Copiado.' : 'Copie o conteúdo abaixo (Ctrl+A, Ctrl+C).'} Cole em <b>feriados.json</b> na raiz do repositório e faça o commit/push: o app de todos pega a lista nova ao abrir ou em até 6 h. ${out.feriados.length} feriado(s), sem os nacionais.</div>
+          <textarea class="mono" readonly style="width:100%;height:140px;font-size:11.5px">${esc(text)}</textarea>`;
+        if (!copied) { const ta = box.querySelector('textarea'); ta.focus(); ta.select(); }
+      });
     };
+    q('.h-opt').querySelectorAll('input').forEach((i) => i.addEventListener('change', () => {
+      prefs.optHol = [...q('.h-opt').querySelectorAll('input:checked')].map((x) => x.dataset.k);
+      savePrefs(); rebuildHolidays(); drawHol(); render();
+    }));
     loadHolidays().then(drawHol);
     q('.h-add').addEventListener('click', async () => {
       const d = q('.h-date').value, n = q('.h-name').value.trim();
       if (!d) { q('.h-date').focus(); return; }
-      try { HOL_SAVED = (await local('/api/holidays', { method: 'POST', body: { date: d, name: n || 'Feriado' } })).holidays; rebuildHolidays(); drawHol(); render(); q('.h-name').value = ''; }
+      try { await holPost({ date: d, name: n || 'Feriado' }); q('.h-name').value = ''; }
       catch (e) { msg(e.message, '#fca5a5'); }
     });
     // Estados de fechado
