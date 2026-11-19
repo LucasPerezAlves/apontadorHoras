@@ -114,6 +114,9 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
 
 - Ao escolher a US pai, o modal mostra os **filhos que já existem** (número, título, tipo, estado e responsável), com os seus em destaque. Cada card que você está para criar é conferido: se já existe um filho com o mesmo título (de qualquer pessoa) ou se você já tem um card do mesmo tipo (Análise, Desenvolvimento, Testes, Commit) nessa US, ele aparece com **"já existe #id"** ou **"você já tem #id"** e vem desmarcado. Cards em *Removed* não contam. Dá para marcar de novo se quiser criar mesmo assim.
 
+- Em cada card, **✏** edita o **título e o estado** ali mesmo na linha (Enter salva, Esc cancela). Os estados oferecidos são os do tipo do card no processo do Azure.
+- **🗑** exclui o card depois de uma confirmação que avisa se ele tem horas apontadas (suas ou de outras pessoas). O card vai para a **Lixeira** do Azure DevOps, de onde dá para restaurar. Sem permissão para excluir, o app oferece mover para o estado *Removed*.
+
 ### ⚙ Configurações e token PAT
 
 ![Configurações](docs/img/configuracoes.png)

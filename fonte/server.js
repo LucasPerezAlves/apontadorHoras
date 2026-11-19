@@ -404,13 +404,16 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith('/api/ado/')) {
       if (!config || !pat) return send(res, 401, { message: 'Configure seu token primeiro.' });
-      if (!['GET', 'POST', 'PATCH'].includes(req.method)) return send(res, 405, { message: 'Método não permitido' });
       const rest = url.pathname.slice('/api/ado'.length); // começa com /
+      // DELETE só para excluir um card (vai para a Lixeira do Azure); o resto é leitura e gravação normal
+      const okDelete = req.method === 'DELETE' && /^\/(?:[^/]+\/)?_apis\/wit\/workitems\/\d+$/.test(rest);
+      if (!['GET', 'POST', 'PATCH'].includes(req.method) && !okDelete) return send(res, 405, { message: 'Método não permitido' });
+      if (okDelete) log('Excluindo card', rest.match(/\d+$/)[0]);
       const target = new URL(`https://dev.azure.com/${encodeURIComponent(config.org)}${rest}${url.search}`);
       if (target.hostname !== 'dev.azure.com' || !target.pathname.startsWith(`/${config.org}/`) || target.pathname.includes('/../')) {
         return send(res, 400, { message: 'Caminho inválido' });
       }
-      const body = req.method === 'GET' ? undefined : await readBody(req);
+      const body = req.method === 'GET' || req.method === 'DELETE' ? undefined : await readBody(req);
       const t0 = Date.now();
       const upstream = await adoFetch(target, {
         method: req.method,

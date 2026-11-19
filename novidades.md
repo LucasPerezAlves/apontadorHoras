@@ -1,3 +1,3 @@
-- Atualizações chegam mais rápido: o app procura a cada 15 minutos
-- A versão nova é baixada sozinha; você escolhe Reiniciar agora ou Depois
-- Se escolher Depois (ou só fechar o app), ela é instalada ao fechar e o app já abre atualizado
+- Aba Cards: botão ✏ em cada card para editar o título e o estado
+- Aba Cards: botão 🗑 para excluir o card (vai para a lixeira do Azure; avisa se ele tem horas apontadas)
+- Trocar de aba ficou instantâneo: Produtividade e Cards são carregadas por trás

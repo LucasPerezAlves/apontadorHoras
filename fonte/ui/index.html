@@ -19,6 +19,11 @@
   button.primary:hover { background: #1d4ed8; }
   button.danger { background: transparent; border-color: #7f1d1d; color: #fca5a5; }
   button.danger.confirm { background: #b91c1c; color: #fff; }
+  .cedit { display: flex; gap: 4px; align-items: center; }
+  .cedit input { flex: 1; min-width: 220px; padding: 3px 6px; font-size: 13px; }
+  select.c-edit-st { padding: 2px 4px; font-size: 12.5px; }
+  tr.crow .cacts .ibtn[data-act="c-edit"], tr.crow .cacts .ibtn[data-act="c-del"] { opacity: .35; }
+  tr.crow:hover .cacts .ibtn { opacity: 1; }
   button:disabled { opacity: .5; cursor: default; }
   a { color: #93c5fd; }
   .icon { padding: 5px 8px; }
@@ -1086,7 +1091,7 @@
         };
       });
       if (S.side !== 'recent') renderList();
-      P.loadedKey = key; P.dataKey = key;
+      P.loadedKey = key; P.dataKey = key; P.at = Date.now();
     } catch (e) { P.error = e.message; }
     finally { P.loading = false; renderProd(); }
   }
@@ -1471,13 +1476,15 @@
       const ps = pids.length ? await getItemsWith(pids, ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.TeamProject']) : [];
       C.parents = new Map(ps.map((w) => [w.id, { id: w.id, title: w.fields['System.Title'], type: w.fields['System.WorkItemType'], state: w.fields['System.State'], project: w.fields['System.TeamProject'] }]));
       for (const r of C.rows) if (!C.parents.has(r.id)) C.parents.set(r.id, { id: r.id, title: r.title, type: r.type, state: r.state, project: r.project });
-      C.key = key; C.dataKey = key;
+      C.key = key; C.dataKey = key; C.at = Date.now();
     } catch (e) { C.error = e.message; }
     finally { C.loading = false; renderCards(); }
   }
   function renderCards() {
     const el = $('.cardsv');
     if (S.view !== 'cards') return;
+    if (C.editingId && el.querySelector('.c-edit-in') && !C.redraw) return; // não atrapalha quem está editando um título
+    C.redraw = false;
     const m0 = C.month, m1 = new Date(m0.getFullYear(), m0.getMonth() + 1, 1);
     const inM = (d) => d && d >= m0 && d < m1;
     const monthName = m0.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
@@ -1522,10 +1529,10 @@
     const dt = (d) => (d ? `${pad(d.getDate())}/${pad(d.getMonth() + 1)}` : '—');
     const link = (r) => `<a href="https://dev.azure.com/${encodeURIComponent(S.org)}/${encodeURIComponent(r.project || S.project)}/_workitems/edit/${r.id}" target="_blank" rel="noopener">#${r.id}</a>`;
     const rowHtml = (r) => `<tr class="crow" data-cid="${r.id}" title="Clique 2x para apontar horas">
-      <td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td><span class="stp ${stClass(r.state)}">${esc(r.state)}</span></td>
+      <td>${link(r)}</td><td class="ctt">${C.editingId === r.id ? `<span class="cedit"><input class="c-edit-in" value="${esc(r.title)}" maxlength="255"><button class="ibtn c-edit-ok" title="Salvar (Enter)">✓</button><button class="ibtn c-edit-no" title="Cancelar (Esc)">✕</button></span>` : esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td>${C.editingId === r.id ? `<select class="c-edit-st">${statesFor(r).map((x) => `<option${x === r.state ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>` : `<span class="stp ${stClass(r.state)}">${esc(r.state)}</span>`}</td>
       <td class="num">${r.myHours ? fmtH(r.myHours) : '—'}</td><td class="num">${hoursMonth(r) ? fmtH(hoursMonth(r)) : '—'}</td>
       <td class="num" style="text-align:left">${dt(r.created)}</td><td class="num" style="text-align:left">${r.closed ? dt(r.closed) : dt(r.changed)}</td>
-      <td class="num" style="white-space:nowrap"><button class="ibtn" data-act="timer" data-id="${r.id}" title="Iniciar no cronômetro">▶</button></td></tr>`;
+      <td class="num cacts" style="white-space:nowrap"><button class="ibtn" data-act="c-edit" data-id="${r.id}" title="Editar título e estado">✏</button><button class="ibtn" data-act="c-del" data-id="${r.id}" title="Excluir o card">🗑</button><button class="ibtn" data-act="timer" data-id="${r.id}" title="Iniciar no cronômetro">▶</button></td></tr>`;
     let body = '';
     if (C.group) {
       const groups = new Map();
@@ -1549,6 +1556,102 @@
     q.addEventListener('input', () => { C.q = q.value; const pos = q.selectionStart; renderCards(); const nq = $('.cardsv .c-q'); nq.focus(); nq.setSelectionRange(pos, pos); });
     el.querySelector('.c-show').addEventListener('change', (e) => { C.show = e.target.value; C.state = null; renderCards(); });
     el.querySelector('.c-group').addEventListener('change', (e) => { C.group = e.target.checked; renderCards(); });
+    const ein = el.querySelector('.c-edit-in');
+    if (ein) {
+      ein.focus(); ein.select();
+      ein.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveCardTitle(C.editingId, ein.value); } if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); C.editingId = null; C.redraw = true; renderCards(); } });
+      el.querySelector('.c-edit-ok').addEventListener('click', () => saveCardTitle(C.editingId, ein.value));
+      el.querySelector('.c-edit-st')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveCardTitle(C.editingId, ein.value); } if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); C.editingId = null; C.redraw = true; renderCards(); } });
+      el.querySelector('.c-edit-no').addEventListener('click', () => { C.editingId = null; C.redraw = true; renderCards(); });
+    }
+  }
+  // ── Editar título/estado e excluir card (aba Cards)
+  // Estados possíveis do tipo do card, na ordem do processo (lidos do Azure); sem isso, os que aparecem nos seus cards
+  function statesFor(r) {
+    const m = SCAT.get(`${r.project || S.project}|${r.type}`);
+    const list = m ? [...m.values()].map((x) => x.name) : [...new Set(C.rows.filter((x) => x.type === r.type).map((x) => x.state))];
+    return list.includes(r.state) ? list : [r.state, ...list];
+  }
+  async function saveCardTitle(id, title) {
+    const r = C.rows.find((x) => x.id === id);
+    if (!r) return;
+    title = String(title || '').replace(/\s+/g, ' ').trim();
+    const sel = $('.cardsv .c-edit-st'), state = sel ? sel.value : r.state;
+    if (!title) { toast('O título não pode ficar vazio.', true); return; }
+    const ops = [];
+    if (title !== r.title) ops.push({ op: 'add', path: '/fields/System.Title', value: title });
+    if (state && state !== r.state) ops.push({ op: 'add', path: '/fields/System.State', value: state });
+    if (!ops.length) { C.editingId = null; C.redraw = true; renderCards(); return; }
+    const inp = $('.cardsv .c-edit-in'); if (inp) inp.disabled = true; if (sel) sel.disabled = true;
+    try {
+      const w = await api(`/_apis/wit/workitems/${id}?api-version=7.1${prefs.dryRun ? '&validateOnly=true' : ''}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json-patch+json' }, body: JSON.stringify(ops),
+      });
+      const what = [title !== r.title && 'título', state !== r.state && `estado (${state})`].filter(Boolean).join(' e ');
+      if (prefs.dryRun) { toast(`Modo teste: o Azure aceitaria mudar ${what}. Nada foi gravado.`); }
+      else {
+        const f = (w && w.fields) || {};
+        r.title = f['System.Title'] || title; r.state = f['System.State'] || state;
+        if (f['System.ChangedDate']) r.changed = new Date(f['System.ChangedDate']);
+        if (w && w.fields) { C.raw.set(id, w); r.closed = closedAtOf(w.fields, r.project || S.project); }
+        const it = S.items.get(id); if (it) { it.title = r.title; it.state = r.state; if (w && w.rev) it.rev = w.rev; }
+        if (C.parents.has(id)) Object.assign(C.parents.get(id), { title: r.title, state: r.state });
+        if (state !== r.state || ops.some((o) => o.path.endsWith('State'))) P.loadedKey = ''; // muda a contagem de fechados
+        toast(`#${id}: ${what} atualizado${what.includes(' e ') ? 's' : ''}.`);
+      }
+      C.editingId = null; C.redraw = true; renderCards(); renderList();
+    } catch (e) {
+      if (inp) inp.disabled = false; if (sel) sel.disabled = false;
+      toast(`Não consegui salvar: ${e.message}`, true);
+    }
+  }
+  function openDeleteCard(id) {
+    const r = C.rows.find((x) => x.id === id); if (!r) return;
+    const w = C.raw.get(id);
+    const all = (parseEntries(w && w.fields[F_WS]) || []).filter((e) => e.start && e.end);
+    const totalH = all.reduce((a, e) => a + entryHours(e), 0), mineH = r.myHours || 0;
+    const removedState = (() => { const m = SCAT.get(`${r.project || S.project}|${r.type}`); if (!m) return null; for (const x of m.values()) if (x.category === 'Removed') return x.name; return null; })();
+    const m = $('.modal');
+    m.classList.remove('wide');
+    m.innerHTML = `<h2>🗑 Excluir #${id}?</h2>
+      <div style="font-size:13px"><b>${esc(r.title)}</b><div class="muted" style="margin-top:2px">${esc(r.type)} · ${esc(r.state)}${r.parent ? ` · filho de #${r.parent}` : ''}</div></div>
+      ${totalH > 0 ? `<div style="background:#2a1515;border:1px solid #5b2323;color:#fecaca;border-radius:8px;padding:8px 10px;font-size:12.5px">⚠ Este card tem <b>${fmtH(totalH)}</b> apontadas${mineH ? ` (<b>${fmtH(mineH)}</b> suas)` : ''}${totalH - mineH > 0.001 ? `, incluindo horas de outras pessoas` : ''}. As horas vão junto com o card.</div>` : '<div class="muted" style="font-size:12.5px">Nenhuma hora apontada neste card.</div>'}
+      <div class="muted" style="font-size:12px">O card vai para a <b>Lixeira</b> do Azure DevOps (Boards → Work items → Recycle bin), de onde dá para restaurar.</div>
+      <div class="err d-err"></div>
+      <div class="foot"><span class="grow"></span><button class="d-cancel">Cancelar</button>
+        ${removedState ? `<button class="d-removed" style="display:none" title="Muda o estado em vez de excluir">Mover para ${esc(removedState)}</button>` : ''}
+        <button class="danger confirm d-ok">${prefs.dryRun ? 'Excluir (modo teste)' : 'Excluir'}</button></div>`;
+    $('.modal-bg').classList.add('on');
+    const q = (x) => m.querySelector(x), errEl = q('.d-err');
+    q('.d-cancel').addEventListener('click', closeModal);
+    const done = (msg) => {
+      C.rows = C.rows.filter((x) => x.id !== id); C.raw.delete(id);
+      S.items.delete(id);
+      prefs.pinned = prefs.pinned.filter((x) => x !== id); prefs.known = prefs.known.filter((x) => x !== id); savePrefs();
+      if ((S.hubIds || []).includes(id)) { writeIndex((ws) => ws.filter((x) => x !== id)).then((d) => { if (d && Array.isArray(d.workItems)) S.hubIds = d.workItems; }).catch(indexWarn); }
+      P.loadedKey = ''; R.key = '';
+      closeModal(); toast(msg); render(); renderCards();
+    };
+    q('.d-ok').addEventListener('click', async () => {
+      if (prefs.dryRun) { errEl.textContent = 'Modo teste: nada foi excluído.'; return; }
+      q('.d-ok').disabled = true; errEl.textContent = 'Excluindo…';
+      try {
+        await api(`/_apis/wit/workitems/${id}?api-version=7.1`, { method: 'DELETE' });
+        done(`#${id} excluído. Ele fica na Lixeira do Azure DevOps se precisar restaurar.`);
+      } catch (e) {
+        q('.d-ok').disabled = false;
+        const perm = e.status === 403 || /permiss|TF237111|TF401019|not authorized|denied/i.test(e.message);
+        errEl.textContent = perm ? `O Azure não deixou excluir: você não tem permissão para excluir cards neste projeto.${removedState ? ` Dá para mover para "${removedState}".` : ''}` : `Não consegui excluir: ${e.message}`;
+        if (perm && q('.d-removed')) q('.d-removed').style.display = '';
+      }
+    });
+    if (q('.d-removed')) q('.d-removed').addEventListener('click', async () => {
+      q('.d-removed').disabled = true; errEl.textContent = `Mudando para ${removedState}…`;
+      try {
+        await api(`/_apis/wit/workitems/${id}?api-version=7.1`, { method: 'PATCH', headers: { 'Content-Type': 'application/json-patch+json' }, body: JSON.stringify([{ op: 'add', path: '/fields/System.State', value: removedState }]) });
+        done(`#${id} movido para ${removedState}.`);
+      } catch (e) { q('.d-removed').disabled = false; errEl.textContent = `Não consegui mudar o estado: ${e.message}`; }
+    });
   }
   // Card da aba Cards entra na lista de trabalho do app (para apontar/cronometrar)
   function adoptCard(id) {
@@ -1757,7 +1860,7 @@
       : v === 'timer' ? 'Apontar grava o tempo até agora e continua contando · Parar/Apontar grava tudo e zera. O cronômetro continua salvo se você fechar o app.'
       : v === 'cards' ? 'Seus cards: atribuídos a você, criados por você ou com horas suas · clique 2x num card para apontar'
       : 'Arraste no calendário para criar uma sessão · clique numa sessão para editar';
-    if (v === 'prod') loadProd(true);
+    if (v === 'prod') loadProd(!(P.rows.length && P.at && Date.now() - P.at < 20e3));
     if (v === 'timer') renderTimer();
     if (v === 'cards') loadCards(false);
   }
@@ -1815,6 +1918,8 @@
       else if (act === 'c-prev' || act === 'c-next') { C.month = new Date(C.month.getFullYear(), C.month.getMonth() + (act === 'c-prev' ? -1 : 1), 1); renderCards(); }
       else if (act === 'c-today') { C.month = monthStart(new Date()); renderCards(); }
       else if (act === 'c-reload') loadCards(true);
+      else if (act === 'c-edit') { C.editingId = id; C.redraw = true; renderCards(); }
+      else if (act === 'c-del') openDeleteCard(id);
       else if (act === 'c-state') { C.state = btn.dataset.st || null; renderCards(); }
       else if (act === 'c-new') openCreateCards(btn.dataset.parent ? Number(btn.dataset.parent) : null);
       else if (act === 'p-prev' || act === 'p-next') { P.month = new Date(P.month.getFullYear(), P.month.getMonth() + (act === 'p-prev' ? -1 : 1), 1); P.selDay = null; loadProd(); }
@@ -1876,7 +1981,7 @@
 
   document.addEventListener('dblclick', (ev) => {
     const crow = ev.target.closest('tr.crow');
-    if (crow && !ev.target.closest('a,button') && S.me) { ev.preventDefault(); const id = Number(crow.dataset.cid); adoptCard(id); quickLog(id); return; }
+    if (crow && !ev.target.closest('a,button,input') && S.me) { ev.preventDefault(); const id = Number(crow.dataset.cid); adoptCard(id); quickLog(id); return; }
     const itemEl = ev.target.closest('.item');
     if (!itemEl || ev.target.closest('.acts') || !S.me) return;
     ev.preventDefault();
@@ -2447,6 +2552,7 @@
       } else {
         await loadHolidays();
         await reload(true);
+        setTimeout(prefetchTabs, 2000);
       }
       showWhatsNew();
       const n = daysLeft(st.expiresAt);
@@ -2475,6 +2581,17 @@
     return $('.modal-bg').classList.contains('on') || !!drag || S.busy
       || (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.value !== '' && !ae.readOnly);
   };
+  // Deixa Produtividade e Cards prontas antes de você clicar nelas (por trás, sem tela de carregando)
+  let prefetching = false;
+  async function prefetchTabs() {
+    if (!S.me || prefetching) return;
+    prefetching = true;
+    try {
+      const old = (t) => !t || Date.now() - t > 120e3;
+      if (S.view !== 'prod' && old(P.at)) await loadProd(true, true).catch(() => {});
+      if (S.view !== 'cards' && old(C.at)) await loadCards(true, true).catch(() => {});
+    } finally { prefetching = false; }
+  }
   async function autoRefresh(why, force) {
     if (!S.me || syncing || (!force && editingNow())) return;
     syncing = true; syncLabel('↻ atualizando…');
@@ -2487,11 +2604,12 @@
       if (S.side === 'recent') jobs.push(loadRecent(true, true));
       await Promise.all(jobs);
       if (!editingNow()) { render(); if (scroll != null && $('.scroller')) $('.scroller').scrollTop = scroll; }
-      // as outras abas recarregam quando forem abertas
+      // as abas que não estão na tela: atualiza por trás, uma de cada vez, se os dados tiverem mais de 2 min
       if (S.view !== 'prod') P.loadedKey = '';
       if (S.view !== 'cards') C.key = '';
       if (S.side !== 'recent') R.key = '';
       lastSync = Date.now();
+      setTimeout(prefetchTabs, 1500);
       syncLabel(`✓ atualizado às ${timeStr(new Date())}`);
     } catch (e) {
       console.warn('[Apontador] atualização automática', why, e);
