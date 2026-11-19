@@ -165,6 +165,7 @@ Um userscript (Tampermonkey) adiciona o botão **⇅ Sincronizar com o Apontador
 
 - **Sessões:** ficam no work item, em `Custom.WorkSessionEntry` (JSON). `Custom.ActualHours` recebe a soma das sessões fechadas. Cada gravação usa um teste de revisão (`/rev`), para não sobrescrever a alteração de outra pessoa.
 - **Lista do hub:** o documento `userWorkSessionIndex` no Extension Data Service é mantido atualizado. O app também corrige itens que estiverem faltando.
+- **Atualização automática:** o app recarrega do Azure a cada 30 s com a janela visível e sempre que você volta para ela. Cards excluídos, fechados ou criados no Azure aparecem sozinhos nas contagens, nas listas e no calendário. A atualização é pulada enquanto você digita ou edita algo, e o rodapé mostra a hora da última atualização.
 - **Rollup:** quando o pai é uma Feature, o app recalcula `ActualHours` e `ChildActualHours` dela, como a extensão faz.
 
 ## Segurança

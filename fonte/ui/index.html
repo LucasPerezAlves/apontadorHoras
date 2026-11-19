@@ -256,7 +256,7 @@
   <div class="prod"></div>
   <div class="timerv"></div>
   <div class="cardsv"></div>
-  <div class="status"><span class="st-left">Arraste no calendário para criar uma sessão · clique numa sessão para editar</span><span class="grow"></span><span class="st-right"></span></div>
+  <div class="status"><span class="st-left">Arraste no calendário para criar uma sessão · clique numa sessão para editar</span><span class="grow"></span><span class="st-sync" title="O app recarrega sozinho a cada 30 s e quando você volta para a janela"></span><span class="st-right"></span></div>
   <div class="loading">Carregando…</div>
   <div class="modal-bg"><div class="modal"></div></div>
   <div class="toast"></div>
@@ -699,10 +699,10 @@
     list.innerHTML = html;
   }
   const RECENT_FIELDS = [...FIELDS, 'System.CreatedDate', 'System.CreatedBy', 'System.AssignedTo'];
-  async function loadRecent(force) {
+  async function loadRecent(force, silent) {
     const key = `${R.days}|${S.project}`;
     if (!force && R.key === key) { renderRecent(); return; }
-    R.loading = true; R.error = ''; renderRecent();
+    if (!silent) { R.loading = true; R.error = ''; renderRecent(); }
     try {
       const ids = await wiql(`SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.CreatedDate] >= @Today - ${R.days - 1} AND ([System.CreatedBy] = @Me OR [System.AssignedTo] = @Me) ORDER BY [System.CreatedDate] DESC`, S.project, 200);
       const out = []; const uniq = [...new Set(ids)];
@@ -866,11 +866,11 @@
     const w0 = startOfWeek(new Date()), w1 = addDays(w0, 7);
     return { from: m0 < w0 ? m0 : w0, to: m1 > w1 ? m1 : w1, m0, m1 };
   }
-  async function loadProd(force) {
+  async function loadProd(force, silent) {
     const { from, to } = prodRange();
     const key = `${from.toISOString()}|${to.toISOString()}`;
     if (!force && P.loadedKey === key) { renderProd(); return; }
-    P.loading = true; P.error = ''; renderProd();
+    if (!silent) { P.loading = true; P.error = ''; renderProd(); }
     try {
       const q = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [Microsoft.VSTS.Common.ClosedDate] >= '${ymdW(addDays(from, -1))}' AND [Microsoft.VSTS.Common.ClosedDate] < '${ymdW(addDays(to, 1))}' AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me OR [Microsoft.VSTS.Common.ClosedBy] = @Me)`;
       let ids = [];
@@ -1238,10 +1238,10 @@
   const isDone = (st) => /^(Closed|Done|Resolved|Removed)$/i.test(st || '');
   const stClass = (st) => (isDone(st) ? 'done' : /^(New|To Do|Proposed)$/i.test(st || '') ? 'new' : 'act');
   const who = (x) => (x && (x.uniqueName || x.displayName) || '').toLowerCase();
-  async function loadCards(force) {
+  async function loadCards(force, silent) {
     const key = `${C.month.getFullYear()}-${C.month.getMonth()}|${S.project}`;
     if (!force && C.key === key && C.rows.length) { renderCards(); return; }
-    C.loading = true; C.error = ''; renderCards();
+    if (!silent) { C.loading = true; C.error = ''; renderCards(); }
     try {
       const base = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.ChangedDate] >= @Today - 120`;
       let ids = [];
@@ -1511,6 +1511,7 @@
   // ───────── Interações ─────────
   async function reload(scrollToNow) {
     const ok = await run('Carregando suas sessões…', loadAll);
+    if (ok) { lastSync = Date.now(); syncLabel(`✓ atualizado às ${timeStr(new Date())}`); }
     if (ok && scrollToNow) {
       const h0 = Number($('.grid').dataset.h0 || 0);
       $('.scroller').scrollTop = Math.max(0, (new Date().getHours() - h0 - 3) * PX_PER_HOUR);
@@ -1956,6 +1957,44 @@
   // Ao fechar a janela, avisa o app para encerrar (libera o .exe)
   window.addEventListener('pagehide', () => { try { navigator.sendBeacon('/api/bye?t=' + encodeURIComponent(APP_TOKEN), ''); } catch { /* ignore */ } });
   setInterval(() => { if (S.me && !S.busy && !drag && !$('.modal-bg').classList.contains('on')) render(); }, 60e3);
+
+  // ───────── Atualização automática ─────────
+  // Recarrega do Azure a cada 30 s com a janela visível e sempre que você volta para ela
+  // (ex.: depois de excluir ou fechar cards no Azure). Não roda enquanto você digita ou edita algo.
+  const AUTO_MS = 30e3;
+  let lastSync = Date.now(), syncing = false;
+  const syncLabel = (t, color) => { const el = $('.st-sync'); if (el) { el.textContent = t; el.style.color = color || '#6b7280'; } };
+  const editingNow = () => {
+    const ae = document.activeElement;
+    return $('.modal-bg').classList.contains('on') || !!drag || S.busy
+      || (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.value !== '' && !ae.readOnly);
+  };
+  async function autoRefresh(why) {
+    if (!S.me || syncing || editingNow()) return;
+    syncing = true; syncLabel('↻ atualizando…');
+    try {
+      const scroll = $('.scroller')?.scrollTop;
+      await loadAll();
+      const jobs = [];
+      if (S.view === 'prod') jobs.push(loadProd(true, true));
+      if (S.view === 'cards') jobs.push(loadCards(true, true));
+      if (S.side === 'recent') jobs.push(loadRecent(true, true));
+      await Promise.all(jobs);
+      if (!editingNow()) { render(); if (scroll != null && $('.scroller')) $('.scroller').scrollTop = scroll; }
+      // as outras abas recarregam quando forem abertas
+      if (S.view !== 'prod') P.loadedKey = '';
+      if (S.view !== 'cards') C.key = '';
+      if (S.side !== 'recent') R.key = '';
+      lastSync = Date.now();
+      syncLabel(`✓ atualizado às ${timeStr(new Date())}`);
+    } catch (e) {
+      console.warn('[Apontador] atualização automática', why, e);
+      syncLabel('⚠ não consegui atualizar agora', '#fca5a5');
+    } finally { syncing = false; }
+  }
+  setInterval(() => { if (document.visibilityState === 'visible' && Date.now() - lastSync >= AUTO_MS) autoRefresh('intervalo'); }, 5000);
+  window.addEventListener('focus', () => { if (Date.now() - lastSync > 4000) autoRefresh('foco'); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastSync > 4000) autoRefresh('visível'); });
   boot();
 })();
 </script>
