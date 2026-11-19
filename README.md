@@ -98,7 +98,7 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
   - Os títulos podem ser **editados**. A ⭐ salva o título como **padrão** para as próximas vezes, com `{id}` e `{titulo}` preenchidos automaticamente.
   - **＋ Card personalizado** adiciona cards com qualquer título.
   - Um card que a US **já tem** com o mesmo título aparece marcado como "já existe" e vem desmarcado.
-  - Os cards são criados como **filhos** da US, na mesma área e iteração, com tipo (Issue/Task/Bug) e "Atribuir a mim" configuráveis.
+  - Os cards são criados como **filhos** da US, na mesma área e iteração, com tipo (Issue/Task/Bug), "Atribuir a mim" e **estado ao criar** (**New** ou já **Active**) configuráveis. Se o processo não deixar o card nascer como Active, o app cria e muda o estado logo em seguida.
   - Antes de criar, o app faz uma validação no Azure. Se faltar um campo obrigatório ou uma permissão, nada é criado.
   - Ao final, a lista mostra os cards criados com link e ▶ para já iniciar o cronômetro.
 

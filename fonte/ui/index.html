@@ -1386,7 +1386,7 @@
         <div class="k-info" style="font-size:12px;color:#8b93a3;margin-top:-4px">${parent ? `✓ ${esc(parent.type)} · ${esc(parent.state)} · ${esc(parent.area)} · ${esc(parent.iteration)}${children.length ? ` · já tem ${children.length} filho(s)` : ''}` : ''}</div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span style="font-size:12px;color:#9aa3b2">Formato do título</span>
-          <span class="seg3"><button data-f="num" class="${fmt === 'num' ? 'on' : ''}">Número da US</button><button data-f="tit" class="${fmt === 'tit' ? 'on' : ''}">Título da US</button><button data-f="both" class="${fmt === 'both' ? 'on' : ''}">Número + título</button></span>
+          <span class="seg3 k-fmt"><button data-f="num" class="${fmt === 'num' ? 'on' : ''}">Número da US</button><button data-f="tit" class="${fmt === 'tit' ? 'on' : ''}">Título da US</button><button data-f="both" class="${fmt === 'both' ? 'on' : ''}">Número + título</button></span>
         </div>
         <div class="tpls" style="display:flex;flex-direction:column;gap:6px">
           ${all.map((r, i) => `<div class="tpl${r.on ? '' : ' off'}" data-i="${i}">
@@ -1400,8 +1400,11 @@
         <div class="row" style="align-items:center">
           <label style="flex:none">Tipo<select class="k-type">${['Issue', 'Task', 'Bug'].map((t) => `<option${(prefs.cardType || 'Issue') === t ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
           <label class="chk" style="margin-top:16px"><input type="checkbox" class="k-me" ${prefs.cardAssignMe === false ? '' : 'checked'}> Atribuir a mim</label>
+          <span class="grow"></span>
+          <span style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;color:#9aa3b2">Estado ao criar</span>
+            <span class="seg3 k-state"><button data-s="New" class="${(prefs.cardState || 'New') === 'New' ? 'on' : ''}">New</button><button data-s="Active" class="${prefs.cardState === 'Active' ? 'on' : ''}">Active</button></span></span>
         </div>
-        ${created.length ? `<div class="p-sec" style="margin:0"><h3>Criados</h3><ul class="created" style="margin:0;padding-left:18px">${created.map((c) => `<li>${c.error ? `<span style="color:#fca5a5">✗ ${esc(c.title)}: ${esc(c.error)}</span>` : `✓ <a href="https://dev.azure.com/${encodeURIComponent(S.org)}/${encodeURIComponent(parent.project)}/_workitems/edit/${c.id}" target="_blank" rel="noopener">#${c.id}</a> ${esc(c.title)} <button class="ibtn" data-act="timer" data-id="${c.id}" title="Iniciar no cronômetro">▶</button>`}</li>`).join('')}</ul></div>` : ''}
+        ${created.length ? `<div class="p-sec" style="margin:0"><h3>Criados</h3><ul class="created" style="margin:0;padding-left:18px">${created.map((c) => `<li>${c.error ? `<span style="color:#fca5a5">✗ ${esc(c.title)}: ${esc(c.error)}</span>` : `✓ <a href="https://dev.azure.com/${encodeURIComponent(S.org)}/${encodeURIComponent(parent.project)}/_workitems/edit/${c.id}" target="_blank" rel="noopener">#${c.id}</a> ${esc(c.title)}${c.state ? ` <span class="stp ${stClass(c.state)}">${esc(c.state)}</span>` : ''}${c.warn ? ` <span style="color:#fde68a;font-size:11.5px">⚠ ${esc(c.warn)}</span>` : ''} <button class="ibtn" data-act="timer" data-id="${c.id}" title="Iniciar no cronômetro">▶</button>`}</li>`).join('')}</ul></div>` : ''}
         <div class="err"></div>
         <div class="foot"><span class="grow"></span><button class="k-cancel">${created.length ? 'Fechar' : 'Cancelar'}</button>
           <button class="primary k-go" ${parent && sel.length ? '' : 'disabled'}>${prefs.dryRun ? 'Validar' : 'Criar'} ${sel.length} card(s)</button></div>`;
@@ -1431,7 +1434,7 @@
       const pin = m.querySelector('.k-parent');
       pin.addEventListener('input', () => { clearTimeout(lookTimer); lookTimer = setTimeout(() => lookup(pin.value), 450); });
       pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(lookTimer); lookup(pin.value); } });
-      m.querySelectorAll('.seg3 button').forEach((b) => b.addEventListener('click', () => { fmt = b.dataset.f; prefs.cardFmt = fmt; savePrefs(); for (const r of rows) r.edited = false; draw(); }));
+      m.querySelectorAll('.k-fmt button').forEach((b) => b.addEventListener('click', () => { fmt = b.dataset.f; prefs.cardFmt = fmt; savePrefs(); for (const r of rows) r.edited = false; draw(); }));
       m.querySelectorAll('.tpl').forEach((row) => {
         const r = all[Number(row.dataset.i)];
         row.querySelector('.k-on').addEventListener('change', (e) => { r.on = e.target.checked; draw(); });
@@ -1449,6 +1452,10 @@
       m.querySelector('.k-add').addEventListener('click', () => { extra.push({ label: '✏ Personalizado', title: parent ? `${parent.id} - ` : '', on: true, edited: true }); draw(); setTimeout(() => { const ins = m.querySelectorAll('.k-title'); ins[ins.length - 1]?.focus(); }, 0); });
       m.querySelector('.k-type').addEventListener('change', (e) => { prefs.cardType = e.target.value; savePrefs(); });
       m.querySelector('.k-me').addEventListener('change', (e) => { prefs.cardAssignMe = e.target.checked; savePrefs(); });
+      m.querySelectorAll('.k-state button').forEach((b) => b.addEventListener('click', () => {
+        prefs.cardState = b.dataset.s; savePrefs();
+        m.querySelectorAll('.k-state button').forEach((x) => x.classList.toggle('on', x === b));
+      }));
       m.querySelector('.k-cancel').addEventListener('click', closeModal);
       m.querySelector('.k-go').addEventListener('click', createAll);
     };
@@ -1456,10 +1463,13 @@
       const sel = [...rows, ...extra].filter((r) => r.on && r.title.trim());
       if (!parent || !sel.length) return;
       const type = m.querySelector('.k-type').value, me = m.querySelector('.k-me').checked;
+      const wantState = prefs.cardState === 'Active' ? 'Active' : null;
+      let stateInCreate = !!wantState; // tenta criar já no estado; se o Azure não aceitar, cria e muda logo depois
       const go = m.querySelector('.k-go'); go.disabled = true;
       const errEl = m.querySelector('.err');
       const body = (title) => JSON.stringify([
         { op: 'add', path: '/fields/System.Title', value: title.trim() },
+        ...(stateInCreate ? [{ op: 'add', path: '/fields/System.State', value: wantState }] : []),
         { op: 'add', path: '/fields/System.AreaPath', value: parent.area },
         { op: 'add', path: '/fields/System.IterationPath', value: parent.iteration },
         ...(me ? [{ op: 'add', path: '/fields/System.AssignedTo', value: S.me.email }] : []),
@@ -1469,14 +1479,26 @@
       // 1) valida o primeiro antes de criar qualquer um (mostra campo obrigatório faltando, permissão etc.)
       errEl.textContent = 'Validando com o Azure…';
       try { await api(url(true), { method: 'POST', headers: { 'Content-Type': 'application/json-patch+json' }, body: body(sel[0].title) }); }
-      catch (e) { errEl.textContent = `O Azure recusou: ${e.message}`; go.disabled = false; return; }
+      catch (e) {
+        if (!stateInCreate) { errEl.textContent = `O Azure recusou: ${e.message}`; go.disabled = false; return; }
+        // o processo não deixa nascer como Active: valida sem o estado e muda depois de criar
+        stateInCreate = false;
+        try { await api(url(true), { method: 'POST', headers: { 'Content-Type': 'application/json-patch+json' }, body: body(sel[0].title) }); }
+        catch (e2) { errEl.textContent = `O Azure recusou: ${e2.message}`; go.disabled = false; return; }
+      }
       if (prefs.dryRun) { errEl.textContent = 'Modo teste: o Azure aceitaria criar estes cards. Nada foi criado.'; go.disabled = false; return; }
       created = [];
       for (const r of sel) {
         errEl.textContent = `Criando "${r.title}"…`;
         try {
-          const w = await api(url(false), { method: 'POST', headers: { 'Content-Type': 'application/json-patch+json' }, body: body(r.title) });
-          created.push({ id: w.id, title: r.title });
+          let w = await api(url(false), { method: 'POST', headers: { 'Content-Type': 'application/json-patch+json' }, body: body(r.title) });
+          let warn = '';
+          if (wantState && w.fields && w.fields['System.State'] !== wantState) {
+            try {
+              w = await api(`/_apis/wit/workitems/${w.id}?api-version=7.1`, { method: 'PATCH', headers: { 'Content-Type': 'application/json-patch+json' }, body: JSON.stringify([{ op: 'add', path: '/fields/System.State', value: wantState }]) });
+            } catch (e) { warn = `criado como ${w.fields['System.State']}; não consegui mudar para ${wantState}: ${e.message}`; }
+          }
+          created.push({ id: w.id, title: r.title, state: w.fields ? w.fields['System.State'] : '', warn });
           if (w.fields) S.items.set(w.id, toItem(w));
           r.on = false;
         } catch (e) { created.push({ title: r.title, error: e.message }); }
