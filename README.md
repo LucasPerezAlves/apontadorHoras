@@ -89,7 +89,7 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
 
 ### ⇅ Sincronização com o Clockin
 
-![Sincronização com o Clockin](docs/img/clockin-sincronizar.png)
+![Sincronização com o Clockin / Terceiros](docs/img/clockin-sincronizar.png)
 
 Um userscript (Tampermonkey) adiciona o botão **⇅ Sincronizar com o Apontador** no Clockin. Para cada dia da semana ele compara o Clockin com o Apontador e propõe:
 
@@ -117,7 +117,7 @@ Um userscript (Tampermonkey) adiciona o botão **⇅ Sincronizar com o Apontador
    - Cole no app e informe a validade.
 4. O app abre numa janela do Edge (modo aplicativo). Ao fechar a janela, o app encerra.
 
-### Clockin (opcional)
+### Clockin (opcional / terceiros)
 
 1. Instale o **Tampermonkey** no Chrome. Em `chrome://extensions` → Tampermonkey → **Detalhes**, ligue **Permitir scripts de usuário**.
 2. Crie um novo script, cole o conteúdo de [`clockin-importar.user.js`](clockin-importar.user.js) e salve.
