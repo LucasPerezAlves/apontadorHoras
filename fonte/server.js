@@ -23,6 +23,7 @@ const NO_WINDOW = process.argv.includes('--no-window');
 const AFTER_UPDATE = process.argv.includes('--after-update'); // subiu sozinho depois de uma atualização
 const APP_VERSION = (() => { try { return require('./version.js'); } catch { return '0.0.0-dev'; } })();
 const UPDATE_REPO = 'LucasPerezAlves/apontadorHoras';
+const APP_NOTES = (() => { try { return require('./novidades.js'); } catch { return ''; } })();
 const DEBUG = process.argv.includes('--debug');
 
 fs.mkdirSync(APP_DIR, { recursive: true });
@@ -302,6 +303,12 @@ const server = http.createServer(async (req, res) => {
     clearTimeout(byeTimer);
 
     if (url.pathname === '/api/ping') return send(res, 200, { ok: true });
+    // Novidades da versão em uso: embutidas no .exe; se faltarem, busca a descrição da release
+    if (url.pathname === '/api/whatsnew') {
+      let notes = APP_NOTES;
+      if (!notes && process.pkg) notes = await releaseNotesOf(APP_VERSION);
+      return send(res, 200, { version: APP_VERSION, notes, page: `https://github.com/${UPDATE_REPO}/releases/tag/v${APP_VERSION}` });
+    }
     if (url.pathname === '/api/update' && req.method === 'GET') {
       if (url.searchParams.get('check') === '1') await checkUpdate();
       return send(res, 200, updateInfo());
@@ -519,6 +526,18 @@ function checkUpdate() {
     finally { U.checkedAt = Date.now(); checking = null; }
   })();
   return checking;
+}
+// Descrição de uma release no GitHub, sem o rodapé fixo (melhor esforço)
+async function releaseNotesOf(version) {
+  for (const tag of [`v${version}`, version]) {
+    try {
+      const r = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/tags/${encodeURIComponent(tag)}`, { headers: GH_HEADERS });
+      if (!r.ok) continue;
+      const body = String((await r.json()).body || '');
+      return body.split(/\n## Todos os commits|\nQuem já usa o app/)[0].replace(/^## O que mudou\s*/m, '').trim();
+    } catch { /* sem rede */ }
+  }
+  return '';
 }
 async function downloadTo(url, file) {
   const r = await fetch(url, { headers: { 'User-Agent': 'ApontadorHoras', Accept: 'application/octet-stream' } });

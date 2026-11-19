@@ -166,6 +166,8 @@ A partir da versão **1.1.2** o app se atualiza sozinho. Quem estiver numa vers�
 - Se houver versão nova, aparece um aviso no topo da janela com **Ver novidades**, **Atualizar agora** e **Depois**. Em **⚙ Configurações** há o botão **Procurar atualizações**.
 - **Atualizar agora** baixa o `.exe` da release, confere o tamanho e o **SHA-256**, troca o arquivo e reabre o app na mesma janela. O cronômetro e as preferências continuam como estavam.
 - Se a versão nova não iniciar em 30 segundos, o app volta sozinho para a anterior e avisa.
+- Na primeira vez que uma versão nova abre, aparece a janela **🎉 Novidades da versão** com o resumo do que mudou. Ela aparece depois do botão de atualizar e também quando alguém troca o `.exe` à mão, uma vez por versão. O resumo fica dentro do `.exe`, então aparece mesmo sem internet.
+- Frequência: o app consulta o GitHub ao abrir e a cada 4 horas. A janela pergunta ao app 12 segundos depois de abrir e a cada 10 minutos.
 - O app precisa estar numa pasta em que o seu usuário possa gravar, como `C:\ApontadorHoras`. Em `Arquivos de Programas` o aviso aparece, mas a atualização pede para baixar manualmente.
 - O script do Clockin também se atualiza: o Tampermonkey busca a versão nova na última release (por padrão, uma vez por dia). Quem instalou uma versão anterior à 1.3.0 precisa reinstalar o script uma vez, para ele passar a saber de onde buscar.
 
@@ -178,7 +180,16 @@ git tag -a v1.2.0 -m "Resumo do que mudou (opcional, aparece nas novidades)"
 git push origin v1.2.0
 ```
 
-O GitHub gera o `ApontadorHoras.exe` com essa versão, calcula o SHA-256, junta o `clockin-importar.user.js` e cria a release. As novidades são a mensagem da tag mais a lista de commits desde a tag anterior. Em poucos minutos, quem tem o app aberto vê o aviso.
+O GitHub gera o `ApontadorHoras.exe` com essa versão, calcula o SHA-256, junta o `clockin-importar.user.js` e cria a release.
+
+**Resumo das novidades** (o que aparece na janela dentro do app): é a mensagem da tag anotada, então vale escrever em linguagem de usuário, uma linha por item:
+
+```bash
+git tag -a v1.2.0 -m "- Feriados da equipe para quem não usa o Clockin
+- Ícone novo, bem visível na barra de tarefas"
+```
+
+Sem mensagem (tag simples, `git tag v1.2.0`), o resumo são os títulos dos commits desde a tag anterior, sem os de documentação. A página da release mostra o resumo e a lista completa de commits. Em poucos minutos, quem tem o app aberto vê o aviso.
 
 Use sempre um número maior que o anterior (1.1.0 → 1.1.1 → 1.2.0). O app só oferece versões maiores que a instalada.
 

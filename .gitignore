@@ -8,6 +8,8 @@ node_modules/
 # Gerado pelo build (fonte/build.js)
 fonte/ui.js
 fonte/version.js
+fonte/novidades.js
+fonte/novidades.md
 
 # Diversos
 *.log

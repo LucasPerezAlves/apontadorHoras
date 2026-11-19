@@ -22,6 +22,30 @@ jobs:
         with:
           node-version: 22
 
+      - name: Montar as novidades
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+          RANGE="${PREV:+$PREV..}$TAG"
+          # Resumo (vai para o modal "Novidades" dentro do app): a mensagem da tag anotada, se houver;
+          # senão, os títulos dos commits desde a tag anterior, sem os de documentação.
+          MSG=""
+          if [ "$(git cat-file -t "$TAG")" = "tag" ]; then MSG=$(git tag -l --format='%(contents)' "$TAG" | sed '/^-----BEGIN/,$d'); fi
+          if [ -n "$(printf '%s' "$MSG" | tr -d '[:space:]')" ]; then
+            printf '%s\n' "$MSG" > fonte/novidades.md
+          else
+            git log --no-merges --pretty='- %s' "$RANGE" | grep -viE '^- (update|merge|readme|docs?)\b' | head -10 > fonte/novidades.md || true
+          fi
+          {
+            cat fonte/novidades.md
+            echo
+            echo "## Todos os commits"
+            git log --no-merges --pretty='- %s' "$RANGE" | head -50
+            echo
+            echo "Quem já usa o app: clique em **Atualizar agora** no aviso que aparece no topo da janela."
+          } > notes.md
+          echo "--- resumo:"; cat fonte/novidades.md
+
       - name: Gerar o .exe
         working-directory: fonte
         env:
@@ -34,22 +58,6 @@ jobs:
           PKG_NODE_PATH="$PWD/dist/node-base-win-x64.exe" npx --yes @yao-pkg/pkg@6.25.0 . -t node22-win-x64 --options use-system-ca --no-bytecode --public-packages "*" --public -o dist/ApontadorHoras.exe
           cp ../clockin-importar.user.js dist/
           cd dist && sha256sum ApontadorHoras.exe > ApontadorHoras.exe.sha256 && cat ApontadorHoras.exe.sha256
-
-      - name: Montar as novidades
-        run: |
-          TAG="$GITHUB_REF_NAME"
-          PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
-          {
-            if [ "$(git cat-file -t "$TAG")" = "tag" ]; then
-              git tag -l --format='%(contents)' "$TAG" | sed '/^-----BEGIN/,$d'
-              echo
-            fi
-            echo "## O que mudou"
-            if [ -n "$PREV" ]; then git log --no-merges --pretty='- %s' "$PREV..$TAG"; else git log --no-merges --pretty='- %s' -n 20 "$TAG"; fi
-            echo
-            echo "Quem já usa o app: clique em **Atualizar agora** no aviso que aparece no topo da janela."
-          } > notes.md
-          cat notes.md
 
       - name: Publicar a release
         env:

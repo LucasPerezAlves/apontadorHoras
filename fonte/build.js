@@ -8,3 +8,8 @@ console.log('ui.js gerado (' + html.length + ' bytes)');
 const version = process.env.APP_VERSION || require('./package.json').version;
 fs.writeFileSync(__dirname + '/version.js', 'module.exports = ' + JSON.stringify(String(version).replace(/^v/i, '')) + ';\n');
 console.log('version.js: ' + version);
+// Resumo das novidades desta versão (o workflow de release grava novidades.md antes do build)
+let notes = '';
+try { notes = fs.readFileSync(__dirname + '/novidades.md', 'utf8').trim(); } catch { /* build local: sem resumo */ }
+fs.writeFileSync(__dirname + '/novidades.js', 'module.exports = ' + JSON.stringify(notes) + ';\n');
+console.log('novidades.js: ' + (notes ? notes.split('\n').length + ' linha(s)' : 'vazio'));

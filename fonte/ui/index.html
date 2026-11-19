@@ -295,6 +295,7 @@
   const F_CAH = 'Custom.ChildActualHours';
   const FIELDS = ['System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.Parent', 'System.TeamProject', F_WS, F_AH];
   const LS_KEY = 'apontadorHoras.app.v1';
+  const HAD_PREFS = (() => { try { return !!localStorage.getItem(LS_KEY); } catch { return false; } })(); // já usava o app antes desta abertura
   const PALETTE = ['#4f8cff', '#f5a524', '#17c964', '#f31260', '#9353d3', '#06b7db', '#ff7a45', '#a3e635', '#e879f9', '#94a3b8'];
   const PX_PER_HOUR = 44;
   const SNAP_MIN = 15;
@@ -2312,6 +2313,33 @@
     }
   }
 
+  // Novidades: na primeira vez que uma versão nova abre (depois de atualizar ou de trocar o .exe)
+  const SEEN_KEY = 'apontadorHoras.seenVersion';
+  const verNewer = (a, b) => {
+    const x = String(a || '').split(/[.+-]/).map((n) => parseInt(n, 10) || 0), y = String(b || '').split(/[.+-]/).map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; }
+    return false;
+  };
+  async function showWhatsNew() {
+    let w;
+    try { w = await local('/api/whatsnew'); } catch { return; }
+    if (!w || !w.version || /dev/.test(w.version)) return;
+    let seen = null;
+    try { // sem registro, mas com preferências salvas = já usava uma versão anterior a este aviso
+      seen = localStorage.getItem(SEEN_KEY) || ((localStorage.getItem('apontadorHoras.updatedTo') || HAD_PREFS) && '0'); localStorage.removeItem('apontadorHoras.updatedTo'); } catch { /* ignore */ }
+    try { localStorage.setItem(SEEN_KEY, w.version); } catch { /* ignore */ }
+    if (!seen || !verNewer(w.version, seen)) return; // primeira instalação ou mesma versão: nada a mostrar
+    if ($('.modal-bg').classList.contains('on')) return; // não atropela outra janela aberta
+    const m = $('.modal');
+    m.classList.remove('wide');
+    m.innerHTML = `<h2>🎉 Novidades da versão ${esc(w.version)}</h2>
+      <div class="notes">${w.notes ? mdLite(w.notes) : '<div class="muted">O app foi atualizado. Os detalhes estão na página da versão.</div>'}</div>
+      <div class="foot"><a href="${esc(w.page)}" target="_blank" rel="noopener">Ver tudo no GitHub ↗</a><span class="grow"></span><button class="primary n-ok">Entendi</button></div>`;
+    $('.modal-bg').classList.add('on');
+    m.querySelector('.n-ok').addEventListener('click', closeModal);
+    m.querySelector('.n-ok').focus();
+  }
+
   // ───────── Início ─────────
   async function boot() {
     render();
@@ -2322,10 +2350,7 @@
       S.me = st.me;
       await loadHolidays();
       await reload(true);
-      try {
-        const up = localStorage.getItem('apontadorHoras.updatedTo');
-        if (up) { localStorage.removeItem('apontadorHoras.updatedTo'); toast(`✓ App atualizado para a versão ${up}.`); }
-      } catch { /* ignore */ }
+      showWhatsNew();
       const n = daysLeft(st.expiresAt);
       if (n != null && n <= 7) toast(n < 0 ? 'Seu token do Azure já venceu. Gere outro em ⚙ → Trocar token.' : `Seu token do Azure vence em ${n} dia(s). Gere outro em ⚙ antes que pare de funcionar.`, true);
     } catch (e) {
