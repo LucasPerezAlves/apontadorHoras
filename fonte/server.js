@@ -676,17 +676,16 @@ if (process.pkg) setTimeout(() => {
 const checkAndFetch = async () => { await checkUpdate(); autoDownload(); };
 if (process.pkg) { setTimeout(checkAndFetch, 3000); setInterval(checkAndFetch, 15 * 60e3); }
 
-// ───────── Presença: quem está usando o app (desligada por padrão) ─────────
-// Só funciona com o arquivo presenca.on na pasta de configuração (%APPDATA%\ApontadorHoras). Ligada, enquanto a
-// janela está aberta grava a cada 2 min "estou aberto" (nome, e-mail, versão, horário) numa coleção própria do
-// Extension Data Service (o mesmo armazenamento da lista do hub) e mostra o botão 👥 com quem está ativo.
-// Desligada (o normal), não envia nada, não lê nada e não mostra o botão.
+// ───────── Presença: quem está usando o app ─────────
+// Todo app, enquanto a janela está aberta, grava a cada 2 min "estou aberto" (nome, e-mail, versão, horário) numa
+// coleção própria do Extension Data Service (o mesmo armazenamento da lista do hub) e marca a saída ao fechar.
+// A tela 👥 com quem está ativo (e a leitura da lista) só aparece com o arquivo presenca.on em %APPDATA%\ApontadorHoras.
 const PRESENCE_ON = () => fs.existsSync(path.join(APP_DIR, 'presenca.on'));
 const PRESENCE_COLLECTION = 'apontadorHorasPresenca';
 const PRESENCE_URL = (id) => `https://extmgmt.dev.azure.com/${encodeURIComponent(config.org)}/_apis/ExtensionManagement/InstalledExtensions/SWProcessTools/philips-emr-workflow-ado/Data/Scopes/Default/Current/Collections/${PRESENCE_COLLECTION}/Documents${id ? '/' + encodeURIComponent(id) : ''}?api-version=7.1-preview.1`;
 const PRESENCE_STARTED = new Date().toISOString();
 async function presenceBeat(closing) {
-  if (!PRESENCE_ON() || !config || !pat || !config.email) return;
+  if (!config || !pat || !config.email) return;
   const doc = { id: config.email, email: config.email, name: config.name || config.email, version: APP_VERSION, startedAt: PRESENCE_STARTED, lastSeen: new Date().toISOString(), closed: !!closing, __etag: -1 };
   try {
     const r = await adoFetch(PRESENCE_URL(), { method: 'PUT', body: JSON.stringify(doc), headers: { Authorization: authHeader(pat), Accept: 'application/json', 'Content-Type': 'application/json', 'X-TFS-FedAuthRedirect': 'Suppress' }, signal: AbortSignal.timeout(closing ? 2500 : 15000) });
