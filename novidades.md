@@ -1,3 +1,2 @@
-- Tema escuro também nos controles: ícones do calendário e do relógio, checkboxes e listas agora aparecem
-- Botões e textos que estavam apagados ficaram mais visíveis
-- Apontamento: o Tab pula direto de um campo para o outro (item, data, início, fim, notas, salvar)
+- Arraste um card da lista lateral para o calendário: o apontamento abre com o card e a data preenchidos (solto num horário, já sugere esse horário)
+- Tab nos campos de data e hora passa por dia, mês, ano, hora e minuto, sem parar no ícone do calendário ou do relógio

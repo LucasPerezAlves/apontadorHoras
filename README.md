@@ -38,6 +38,7 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
 - Cada dia mostra o **total apontado** e quanto **falta para a meta diária**. No topo fica o total da semana.
 - **Arraste** no calendário para criar uma sessão (com encaixe de 15 em 15 min). **Clique** numa sessão para editar, mover para outro card ou excluir.
 - A barra lateral **Meus itens** mostra os cards com horas na semana, os fixados, os recentes e os fechados. **Clique duplo** num card abre a tela de apontamento.
+- **Arraste um card da lista lateral** (Meus itens ou Criados recentemente) **para o calendário**: o apontamento abre com o card e a data preenchidos. Solto num horário da grade, já sugere esse horário (1 h); solto no cabeçalho do dia, deixa os horários em branco para você digitar.
 - Antes de gravar, o app confere se o horário se sobrepõe a outra sessão sua, como faz o hub.
 - **Feriados** aparecem com a etiqueta vermelha **"Feriado: nome"** na data, e a coluna fica destacada. Esses dias não contam nas metas de horas (a meta da semana desconta o feriado) nem na de cards. Os feriados vêm de quatro fontes, e ninguém precisa do Clockin para tê-los:
   - **Nacionais:** calculados no app, inclusive a Sexta-feira Santa.

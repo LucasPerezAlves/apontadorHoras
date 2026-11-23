@@ -12,8 +12,13 @@
      relógio, setas do número, checkbox, lista do select, "x" da busca e barras de rolagem) */
   :root { color-scheme: dark; accent-color: #3b82f6; }
   html, body { margin: 0; height: 100%; background: #16181d; }
-  ::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .9; }
-  ::-webkit-calendar-picker-indicator:hover { opacity: 1; background-color: #2f3440; border-radius: 3px; }
+  /* O ícone nativo do calendário/relógio recebe Tab; ele some e um ícone desenhado no lugar abre o seletor
+     no clique (ou Alt+↓). Assim o Tab passa por dia, mês, ano / hora e minuto e pula só o ícone. */
+  ::-webkit-calendar-picker-indicator { display: none; }
+  input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"] { padding-right: 30px; background-repeat: no-repeat; background-position: right 9px center; background-size: 16px; }
+  input[type="date"], input[type="month"] { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23c9cfd9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 10h18'/%3E%3C/svg%3E"); }
+  input[type="time"] { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23c9cfd9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E"); }
+  input[type="datetime-local"] { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23c9cfd9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 10h18'/%3E%3C/svg%3E"); }
   select option, select optgroup { background: #1b1e25; color: #e6e8ec; }
   * { scrollbar-color: #4a5160 transparent; }
   ::placeholder { color: #7d8596; opacity: 1; }
@@ -79,6 +84,10 @@
   .gutter { position: relative; }
   .gutter span { position: absolute; right: 6px; font-size: 11px; color: #8b93a3; transform: translateY(-50%); }
   .col { position: relative; border-left: 1px solid #2b2f38; cursor: crosshair; user-select: none; }
+  .item[draggable="true"] { cursor: grab; }
+  body.dnd-on .col { background: rgba(37, 99, 235, .04); }
+  .ghost.dnd { background: rgba(23, 201, 100, .22); border-color: #17c964; color: #bbf7d0; pointer-events: none; }
+  .dh.dnd-over { outline: 2px dashed #17c964; outline-offset: -3px; background: rgba(23, 201, 100, .1); }
   .col.we { background: rgba(255,255,255,.015); }
   .col.today { background: rgba(37,99,235,.05); }
   .hl { position: absolute; left: 0; right: 0; border-top: 1px solid #23262e; pointer-events: none; }
@@ -812,7 +821,7 @@
       html += `<div class="sec">${esc(name)}</div>`;
       for (const it of arr) {
         const pinned = prefs.pinned.includes(it.id);
-        html += `<div class="item${S.selectedId === it.id ? ' sel' : ''}" data-id="${it.id}" title="${esc(it.title)}">
+        html += `<div class="item${S.selectedId === it.id ? ' sel' : ''}" data-id="${it.id}" draggable="true" title="${esc(it.title)} · arraste para um dia do calendário para apontar">
           <span class="sw" style="background:${colorOf(it.id)}"></span>
           <div class="txt"><div class="t">${esc(it.title)}</div><div class="m">#${it.id} · ${esc(it.type)} · ${esc(it.state)}${it.unreadable ? ' · ⚠ sessões ilegíveis' : ''}</div></div>
           ${wh.has(it.id) ? `<span class="h">${fmtH(wh.get(it.id))}</span>` : ''}
@@ -870,7 +879,7 @@
       const mine = (r.createdBy || '').toLowerCase() === S.me.email;
       const live = S.items.get(r.id);
       const myH = (live ? live.entries : r.entries).filter(isMine).reduce((a, e) => a + (e.end ? entryHours(e) : 0), 0);
-      html += `<div class="item${S.selectedId === r.id ? ' sel' : ''}" data-id="${r.id}" data-src="recent" title="Clique 2x para apontar horas em #${r.id}">
+      html += `<div class="item${S.selectedId === r.id ? ' sel' : ''}" data-id="${r.id}" data-src="recent" draggable="true" title="Clique 2x ou arraste para um dia do calendário para apontar horas em #${r.id}">
         <span class="sw" style="background:${colorOf(r.id)}"></span>
         <div class="txt"><div class="t">${esc(r.title)}${Date.now() - r.created < 2 * 3600e3 ? '<span class="new">novo</span>' : ''}</div>
         <div class="m">#${r.id} · ${esc(r.type)} · ${esc(r.state)} · criado ${timeStr(r.created)}${mine ? '' : ` por ${esc(r.createdByName.split(' ')[0])}`}</div></div>
@@ -929,7 +938,7 @@
       const day = addDays(S.weekStart, d);
       const pct = Math.min(100, (100 * perDay[d]) / prefs.dailyGoal);
       const hol = holidayOf(day), work = d < 5 && !hol;
-      head += `<div class="dh${sameDay(day, today) ? ' today' : ''}${d >= 5 ? ' we' : ''}${hol ? ' isHol' : ''}">
+      head += `<div class="dh${sameDay(day, today) ? ' today' : ''}${d >= 5 ? ' we' : ''}${hol ? ' isHol' : ''}" data-day="${d}">
         <div class="n">${DAY_NAMES[d]} ${pad(day.getDate())}/${pad(day.getMonth() + 1)}</div>
         <div class="tot"><span>${fmtH(perDay[d])}</span><span>${work && perDay[d] < prefs.dailyGoal ? `faltam ${fmtH(prefs.dailyGoal - perDay[d])}` : ''}</span></div>
         ${work ? `<div class="mini${perDay[d] < prefs.dailyGoal ? ' low' : ''}"><i style="width:${pct}%"></i></div>` : ''}
@@ -1996,7 +2005,8 @@
     if (ev.key !== 'Tab' || ev.altKey || ev.ctrlKey) return;
     const t = ev.target, modal = $('.modal-bg.on .modal');
     const dateLike = t instanceof HTMLInputElement && ['date', 'time', 'datetime-local', 'month', 'week'].includes(t.type);
-    // com um modal aberto, o Tab dá a volta dentro dele (não escapa para a tela de trás)
+    // com um modal aberto, o Tab dá a volta dentro dele (não escapa para a tela de trás). Em data/hora o Tab
+    // anda pelos pedaços (dia, mês, ano / hora, minuto), então lá o navegador decide.
     if (modal && !dateLike) {
       const list = tabbables(modal);
       if (!list.length) return;
@@ -2007,15 +2017,24 @@
       }
       return;
     }
-    if (!dateLike) return;
-    const root = t.closest('.modal') || document.body;
-    const list = tabbables(root), i = list.indexOf(t);
-    if (i < 0) return;
-    ev.preventDefault();
-    const next = list[(i + (ev.shiftKey ? -1 : 1) + list.length) % list.length];
-    next.focus();
-    if (next.select && /^(text|search|number)$/.test(next.type || '')) next.select();
   }, true);
+  // Ícone desenhado do calendário/relógio: clique na ponta direita do campo ou Alt+↓ / F4 abre o seletor
+  const pickerInput = (t) => t instanceof HTMLInputElement && ['date', 'time', 'datetime-local', 'month'].includes(t.type) && !t.disabled;
+  document.addEventListener('click', (ev) => {
+    const t = ev.target;
+    if (!pickerInput(t)) return;
+    const r = t.getBoundingClientRect();
+    if (ev.clientX >= r.right - 32) { try { t.showPicker(); } catch { /* navegador sem showPicker */ } }
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (pickerInput(ev.target) && ((ev.altKey && ev.key === 'ArrowDown') || ev.key === 'F4')) { ev.preventDefault(); try { ev.target.showPicker(); } catch { /* ignore */ } }
+  });
+  document.addEventListener('mousemove', (ev) => {
+    const t = ev.target;
+    if (!pickerInput(t)) return;
+    const r = t.getBoundingClientRect();
+    t.style.cursor = ev.clientX >= r.right - 32 ? 'pointer' : '';
+  });
   document.addEventListener('dblclick', (ev) => {
     const crow = ev.target.closest('tr.crow');
     if (crow && !ev.target.closest('a,button,input') && S.me) { ev.preventDefault(); const id = Number(crow.dataset.cid); adoptCard(id); quickLog(id); return; }
@@ -2078,6 +2097,67 @@
     const end = new Date(d0.getTime()); end.setHours(0, b, 0, 0);
     openSessionDialog({ itemId: S.selectedId, start, end });
   });
+  // Arrastar um card da lista lateral para o calendário: abre o apontamento com o card e a data preenchidos.
+  // Solto num horário da grade, já sugere esse horário (1 h); solto no cabeçalho do dia, só a data.
+  let dnd = null;
+  const DND_TYPE = 'application/x-apontador-item';
+  document.addEventListener('dragstart', (ev) => {
+    const el = ev.target.closest && ev.target.closest('.item[draggable="true"]');
+    if (!el || !S.me) return;
+    const id = Number(el.dataset.id);
+    ev.dataTransfer.setData(DND_TYPE, String(id));
+    ev.dataTransfer.setData('text/plain', `#${id}`);
+    ev.dataTransfer.effectAllowed = 'copy';
+    const it = S.items.get(id) || (R.rows || []).find((x) => x.id === id);
+    dnd = { id, title: it ? it.title : '', ghost: null, col: null };
+    document.body.classList.add('dnd-on');
+  });
+  const dndTarget = (ev) => {
+    const col = ev.target.closest && ev.target.closest('.col');
+    if (col) return { col, day: Number(col.dataset.day) };
+    const dh = ev.target.closest && ev.target.closest('.dh[data-day]');
+    if (dh) return { head: dh, day: Number(dh.dataset.day) };
+    return null;
+  };
+  const dndClear = () => {
+    if (!dnd) return;
+    if (dnd.ghost) dnd.ghost.remove();
+    dnd.ghost = null; dnd.col = null;
+    document.querySelectorAll('.dh.dnd-over').forEach((e) => e.classList.remove('dnd-over'));
+  };
+  document.addEventListener('dragover', (ev) => {
+    if (!dnd) return;
+    const t = dndTarget(ev);
+    if (!t) { dndClear(); return; }
+    ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy';
+    if (t.head) { dndClear(); t.head.classList.add('dnd-over'); return; }
+    document.querySelectorAll('.dh.dnd-over').forEach((e) => e.classList.remove('dnd-over'));
+    if (dnd.col !== t.col) { if (dnd.ghost) dnd.ghost.remove(); dnd.ghost = document.createElement('div'); dnd.ghost.className = 'ghost dnd'; t.col.appendChild(dnd.ghost); dnd.col = t.col; }
+    const h0 = Number($('.grid').dataset.h0), a = Math.min(yToMinutes(t.col, ev.clientY), 23 * 60), b = a + 60;
+    const f = (m) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+    dnd.ghost.style.top = `${((a - h0 * 60) * PX_PER_HOUR) / 60}px`;
+    dnd.ghost.style.height = `${PX_PER_HOUR}px`;
+    dnd.ghost.textContent = `#${dnd.id} · ${f(a)}–${f(b)}`;
+  });
+  document.addEventListener('drop', (ev) => {
+    if (!dnd) return;
+    const t = dndTarget(ev);
+    const id = Number(ev.dataTransfer.getData(DND_TYPE)) || dnd.id;
+    dndClear(); dnd = null; document.body.classList.remove('dnd-on');
+    if (!t || !id) return;
+    ev.preventDefault();
+    adoptItem(id); S.selectedId = id;
+    const d0 = addDays(S.weekStart, t.day);
+    if (t.col) {
+      const a = Math.min(yToMinutes(t.col, ev.clientY), 23 * 60);
+      const start = new Date(d0.getTime()); start.setHours(0, a, 0, 0);
+      openSessionDialog({ itemId: id, start, end: new Date(start.getTime() + 3600e3) });
+    } else {
+      const start = new Date(d0.getTime()); start.setHours(9, 0, 0, 0);
+      openSessionDialog({ itemId: id, start, end: new Date(start.getTime() + 3600e3), blankTimes: true });
+    }
+  });
+  document.addEventListener('dragend', () => { dndClear(); dnd = null; document.body.classList.remove('dnd-on'); });
   function updateGhost() {
     const h0 = Number($('.grid').dataset.h0);
     const a = Math.min(drag.m0, drag.m1), b = Math.max(drag.m0, drag.m1, a + SNAP_MIN);
@@ -2089,7 +2169,7 @@
 
   // ───────── Diálogos ─────────
   function closeModal() { $('.modal-bg').classList.remove('on'); $('.modal').innerHTML = ''; $('.modal').classList.remove('wide'); }
-  function openSessionDialog({ itemId, start, end, entry }) {
+  function openSessionDialog({ itemId, start, end, entry, blankTimes }) {
     const editing = !!entry;
     if (editing) { start = new Date(entry.start); end = entry.end ? new Date(entry.end) : null; }
     const items = [...S.items.values()].sort((a, b) => b.id - a.id);
@@ -2199,6 +2279,7 @@
         if (ok) toast(prefs.dryRun ? 'Modo teste: exclusão validada, nada foi alterado.' : 'Sessão excluída.');
       });
     }
+    if (blankTimes) { q('.f-start').value = ''; q('.f-end').value = ''; q('.f-end').disabled = false; q('.f-open').checked = false; q('.f-start').dispatchEvent(new Event('input', { bubbles: true })); }
     setTimeout(() => (itemId ? q('.f-start') : q('.f-item')).focus(), 0);
   }
 
