@@ -1,2 +1,3 @@
-- Arraste um card da lista lateral para o calendário: o apontamento abre com o card e a data preenchidos (solto num horário, já sugere esse horário)
-- Tab nos campos de data e hora passa por dia, mês, ano, hora e minuto, sem parar no ícone do calendário ou do relógio
+- "Fechados sem horas" agora mostra só cards fechados no seu nome (Assigned To): quem só passou pelo card ou o deixou para outra pessoa não vê mais
+- Ocultar ▾: esconda só aquele card, todos com o mesmo título ou todos do mesmo tipo
+- Unit Test e Release Note já vêm ocultos (dá para reexibir)

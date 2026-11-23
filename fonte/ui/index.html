@@ -265,6 +265,9 @@
   .chip-btn.ghost { background: transparent; color: #9aa3b2; }
   tr.hidrow td { opacity: .55; }
   .hid-note { font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .hmenu { position: fixed; z-index: 30; background: #1f232b; border: 1px solid #434a59; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.45); padding: 4px; display: flex; flex-direction: column; min-width: 240px; max-width: 360px; }
+  .hmenu button { background: transparent; border: 0; text-align: left; padding: 6px 8px; font-size: 12.5px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hmenu button:hover { background: #2f3440; }
   @media (max-width: 1000px) {
     aside { width: 210px; }
     .item .acts { display: none; }
@@ -341,6 +344,13 @@
   if (!Array.isArray(prefs.closedCats)) prefs.closedCats = ['Resolved', 'Completed'];
   if (!Array.isArray(prefs.hideTitles)) prefs.hideTitles = ['Code Review', 'Integrated Test'];
   if (!Array.isArray(prefs.hiddenIds)) prefs.hiddenIds = [];
+  if (!Array.isArray(prefs.hideTypes)) prefs.hideTypes = [];
+  // Padrões novos (1.2.3): Unit Test e Release Note costumam ser criados pelo Azure/outros e apontados em outro card
+  if ((prefs.hideVer || 1) < 2) {
+    if (!prefs.hideTitles.some((x) => x.toLowerCase() === 'unit test')) prefs.hideTitles.push('Unit Test');
+    if (!prefs.hideTypes.some((x) => x.toLowerCase() === 'release note')) prefs.hideTypes.push('Release Note');
+    prefs.hideVer = 2;
+  }
   function savePrefs() { try { localStorage.setItem(LS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ } }
 
   const S = { me: null, org: 'emr-cm', project: 'EMR', items: new Map(), weekStart: startOfWeek(new Date()), selectedId: null, filter: '', busy: false, view: 'cal', side: 'mine' };
@@ -1041,13 +1051,42 @@
     return d ? new Date(d) : null;
   }
   // Cards de rotina sem horas (Code Review, Integrated Test…) que você não aponta: escondidos da lista "sem horas"
-  function hiddenWhy(r) {
-    if (r.myHours > 0) return '';
-    if (prefs.hiddenIds.includes(r.id)) return 'id';
+  // Por que um card fechado sem horas está oculto: escolhido um a um, pelo título ou pelo tipo
+  function hiddenRule(r) {
+    if (r.myHours > 0) return null;
+    if (prefs.hiddenIds.includes(r.id)) return { k: 'id' };
     const t = (r.title || '').toLowerCase();
-    const hit = prefs.hideTitles.find((x) => x && t.includes(x.toLowerCase()));
-    return hit ? `título contém "${hit}"` : '';
+    const title = prefs.hideTitles.find((x) => x && t.includes(x.toLowerCase()));
+    if (title) return { k: 'title', v: title, text: `título contém "${title}"` };
+    const type = prefs.hideTypes.find((x) => x && x.toLowerCase() === String(r.type || '').toLowerCase());
+    if (type) return { k: 'type', v: type, text: `tipo ${type}` };
+    return null;
   }
+  function hiddenWhy(r) { const h = hiddenRule(r); return !h ? '' : h.k === 'id' ? 'id' : h.text; }
+
+  // Menu do "Ocultar ▾" na lista de fechados sem horas: só este card, todos com o mesmo título ou do mesmo tipo
+  function closeHideMenu() { document.querySelectorAll('.hmenu').forEach((e) => e.remove()); }
+  function openHideMenu(btn, id) {
+    closeHideMenu();
+    const r = P.rows.find((x) => x.id === id); if (!r) return;
+    const m = document.createElement('div');
+    m.className = 'hmenu';
+    const short = (t) => (t.length > 48 ? t.slice(0, 46) + '…' : t);
+    m.innerHTML = `<button data-act="p-hide" data-id="${id}">Só este card (#${id})</button>
+      <button data-act="p-hidetitle" data-v="${esc(r.title)}" title="Esconde os cards cujo título contém este texto">Todos com o título "${esc(short(r.title))}"</button>
+      ${r.type ? `<button data-act="p-hidetype" data-v="${esc(r.type)}">Todos do tipo ${esc(r.type)}</button>` : ''}
+      <div class="muted" style="font-size:11px;padding:4px 8px 2px">Só esconde cards sem horas suas. Dá para desfazer em ⚙ ou no "Mostrar".</div>`;
+    document.body.appendChild(m);
+    const b = btn.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+    m.style.left = `${Math.max(8, Math.min(b.right - mw, window.innerWidth - mw - 8))}px`;
+    m.style.top = `${b.bottom + mh + 4 > window.innerHeight ? b.top - mh - 4 : b.bottom + 4}px`;
+    setTimeout(() => {
+      const off = (e) => { if (!e.target.closest('.hmenu')) { closeHideMenu(); document.removeEventListener('pointerdown', off, true); } };
+      document.addEventListener('pointerdown', off, true);
+    }, 0);
+  }
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeHideMenu(); });
+  document.addEventListener('scroll', closeHideMenu, true);
 
   // ───────── Produtividade: cards fechados com horas suas ─────────
   // Regra: conta o card se ele está num estado de fechado (ver "Estados" acima) e tem pelo menos uma sessão sua com horas.
@@ -1105,7 +1144,8 @@
           project, closed: closedAtOf(f, project), entries,
           removed: isRemovedState(project, f['System.WorkItemType'], f['System.State']),
           myHours: entries.reduce((a, e) => a + entryHours(e), 0),
-          mineToClose: [f['Microsoft.VSTS.Common.ClosedBy'], f['Microsoft.VSTS.Common.ResolvedBy'], f['System.AssignedTo']].some((x) => who(x) === S.me.email),
+          // "esquecido" só se o card fechou atribuído a você (quem só passou pelo card ou fechou para outro não conta)
+          mineToClose: who(f['System.AssignedTo']) === S.me.email,
         };
       });
       if (S.side !== 'recent') renderList();
@@ -1174,12 +1214,15 @@
       ${rows.map((r) => `<tr><td class="num" style="text-align:left">${when(r.closed)}</td><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td class="num">${fmtH(r.myHours)}</td></tr>`).join('')}</table>` : '<div class="muted">Nenhum card fechado com horas suas nesse período.</div>'}</div>`;
     if (st.noHours.length || st.hidden.length) {
       const shown = P.showHidden ? st.noHours.concat(st.hidden) : st.noHours;
-      const hidNote = st.hidden.length ? ` <span class="muted hid-note">· ${st.hidden.length} oculto${st.hidden.length === 1 ? '' : 's'} (${esc([...prefs.hideTitles, ...(st.hidden.some((r) => hiddenWhy(r) === 'id') ? [`${st.hidden.filter((r) => hiddenWhy(r) === 'id').length} escolhido(s) por você`] : [])].join(', '))}) <button class="chip-btn" data-act="p-hid">${P.showHidden ? 'Esconder' : 'Mostrar'}</button></span>` : '';
-      html += `<div class="p-sec"><h3 class="warn-h">⚠ Fechados ${esc(label)} sem horas suas (${st.noHours.length}): não contam até você apontar${hidNote}</h3>${shown.length ? `<table class="t"><tr><th>Fechado em</th><th>Card</th><th>Título</th><th>Tipo</th><th></th></tr>
-        ${shown.sort((x, y) => y.closed - x.closed).map((r) => { const why = hiddenWhy(r); return `<tr${why ? ' class="hidrow"' : ''}><td class="num" style="text-align:left">${when(r.closed)}</td><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td class="num" style="white-space:nowrap">${
-          why === 'id' ? '<button class="chip-btn" data-act="p-unhide" data-id="' + r.id + '" title="Voltar a mostrar este card">Reexibir</button> '
-          : why ? `<span class="muted" style="font-size:11.5px">oculto: ${esc(why)}</span> `
-          : `<button class="chip-btn ghost" data-act="p-hide" data-id="${r.id}" title="Não mostrar mais este card nesta lista">Ocultar</button> `}<button class="chip-btn" data-act="p-log" data-id="${r.id}">Apontar</button></td></tr>`; }).join('')}</table>` : '<div class="muted">Todos os fechados sem horas deste período estão ocultos.</div>'}</div>`;
+      const why = [...new Set(st.hidden.map((r) => { const h = hiddenRule(r); return h.k === 'id' ? '' : h.k === 'type' ? `tipo ${h.v}` : h.v; }).filter(Boolean))];
+      const nIds = st.hidden.filter((r) => hiddenRule(r).k === 'id').length;
+      if (nIds) why.push(`${nIds} escolhido(s) por você`);
+      const hidNote = st.hidden.length ? ` <span class="muted hid-note">· ${st.hidden.length} oculto${st.hidden.length === 1 ? '' : 's'} (${esc(why.join(', '))}) <button class="chip-btn" data-act="p-hid">${P.showHidden ? 'Esconder' : 'Mostrar'}</button></span>` : '';
+      html += `<div class="p-sec"><h3 class="warn-h" title="Cards fechados que estão atribuídos a você (Assigned To) e não têm horas suas">⚠ Fechados ${esc(label)} no seu nome e sem horas suas (${st.noHours.length}): não contam até você apontar${hidNote}</h3>${shown.length ? `<table class="t"><tr><th>Fechado em</th><th>Card</th><th>Título</th><th>Tipo</th><th></th></tr>
+        ${shown.sort((x, y) => y.closed - x.closed).map((r) => { const h = hiddenRule(r); return `<tr${h ? ' class="hidrow"' : ''}><td class="num" style="text-align:left">${when(r.closed)}</td><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td class="num" style="white-space:nowrap">${
+          !h ? `<button class="chip-btn ghost" data-act="p-hidemenu" data-id="${r.id}" title="Esconder este card (ou todos do mesmo título ou tipo) desta lista">Ocultar ▾</button> `
+          : h.k === 'id' ? `<button class="chip-btn" data-act="p-unhide" data-id="${r.id}" title="Voltar a mostrar este card">Reexibir</button> `
+          : `<span class="muted" style="font-size:11.5px">oculto: ${esc(h.text)}</span> <button class="chip-btn" data-act="p-unhidepat" data-k="${h.k}" data-v="${esc(h.v)}" title="Voltar a mostrar todos os cards com ${h.k === 'type' ? 'este tipo' : 'este título'}">Reexibir</button> `}<button class="chip-btn" data-act="p-log" data-id="${r.id}">Apontar</button></td></tr>`; }).join('')}</table>` : '<div class="muted">Todos os fechados sem horas deste período estão ocultos.</div>'}</div>`;
     }
     const open = P.rows.filter((r) => !r.closed && r.myHours > 0 && !r.removed).sort((x, y) => y.myHours - x.myHours);
     if (open.length) {
@@ -1954,7 +1997,20 @@
         renderUpd();
       }
       else if (act === 'p-hid') { P.showHidden = !P.showHidden; renderProd(); }
-      else if (act === 'p-hide') { if (!prefs.hiddenIds.includes(id)) prefs.hiddenIds.push(id); savePrefs(); renderProd(); toast(`#${id} não aparece mais na lista "sem horas". Para reexibir, clique em Mostrar ao lado dos ocultos.`); }
+      else if (act === 'p-hidemenu') openHideMenu(btn, id);
+      else if (act === 'p-hide') { closeHideMenu(); if (!prefs.hiddenIds.includes(id)) prefs.hiddenIds.push(id); savePrefs(); renderProd(); toast(`#${id} não aparece mais na lista "sem horas". Para reexibir, clique em Mostrar ao lado dos ocultos.`); }
+      else if (act === 'p-hidetitle' || act === 'p-hidetype') {
+        closeHideMenu();
+        const v = btn.dataset.v, list = act === 'p-hidetitle' ? prefs.hideTitles : prefs.hideTypes;
+        if (!list.some((x) => x.toLowerCase() === v.toLowerCase())) list.push(v);
+        savePrefs(); renderProd();
+        toast(act === 'p-hidetitle' ? `Cards com "${v}" no título não aparecem mais nesta lista.` : `Cards do tipo ${v} não aparecem mais nesta lista.`);
+      }
+      else if (act === 'p-unhidepat') {
+        const v = btn.dataset.v.toLowerCase();
+        if (btn.dataset.k === 'type') prefs.hideTypes = prefs.hideTypes.filter((x) => x.toLowerCase() !== v); else prefs.hideTitles = prefs.hideTitles.filter((x) => x.toLowerCase() !== v);
+        savePrefs(); renderProd();
+      }
       else if (act === 'p-unhide') { prefs.hiddenIds = prefs.hiddenIds.filter((x) => x !== id); savePrefs(); renderProd(); }
       else if (act === 'p-day') { const k = btn.dataset.day; P.selDay = P.selDay === k ? null : k; renderProd(); }
       else if (act === 'p-log') { const it = P.rows.find((r) => r.id === id); if (it) { const ensure = await ensureItem(id); const end = it.closed ? truncMin(it.closed) : truncMin(new Date()); openSessionDialog({ itemId: ensure ? ensure.id : id, start: new Date(end.getTime() - 3600e3), end }); } }
@@ -2330,7 +2386,9 @@
         <div class="muted" style="font-size:12px;margin:4px 0 8px">O app lê a categoria de cada estado no Azure. Marque as categorias que, no seu time, significam card terminado.</div>
         <div class="s-cats"></div>
         <label style="margin-top:10px">Ocultar da lista "fechados sem horas" os cards cujo título contém <span class="muted">(separe por vírgula)</span>
-          <input class="s-hide" value="${esc(prefs.hideTitles.join(', '))}" placeholder="Ex.: Code Review, Integrated Test"></label>
+          <input class="s-hide" value="${esc(prefs.hideTitles.join(', '))}" placeholder="Ex.: Code Review, Integrated Test, Unit Test"></label>
+        <label style="margin-top:8px">… e os cards destes tipos <span class="muted">(separe por vírgula)</span>
+          <input class="s-hidetypes" value="${esc(prefs.hideTypes.join(', '))}" placeholder="Ex.: Release Note"></label>
         <div class="muted" style="font-size:12px;margin-top:4px">Só esconde cards sem horas suas; um card oculto que receber horas volta a contar normalmente.${prefs.hiddenIds.length ? ` ${prefs.hiddenIds.length} card(s) ocultos um a um · <a href="#" class="s-unhide">reexibir todos</a>` : ''}</div>
       </div>
       <div class="row">
@@ -2469,6 +2527,7 @@
       const catsChanged = cats.slice().sort().join() !== prefs.closedCats.slice().sort().join();
       prefs.closedCats = cats.length ? cats : ['Resolved', 'Completed'];
       prefs.hideTitles = q('.s-hide').value.split(',').map((x) => x.trim()).filter(Boolean);
+      prefs.hideTypes = q('.s-hidetypes').value.split(',').map((x) => x.trim()).filter(Boolean);
       savePrefs(); closeModal();
       if (catsChanged) { P.loadedKey = ''; C.key = ''; if (S.view === 'prod') loadProd(true); else if (S.view === 'cards') loadCards(true); }
       render();
