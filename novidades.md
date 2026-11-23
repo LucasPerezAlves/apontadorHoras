@@ -1,1 +1,1 @@
-- Corrige o botão "Ocultar ▾" da lista de fechados sem horas: ele aparecia solto em cima do título; agora fica ao lado do "Apontar"
+- Melhorias internas

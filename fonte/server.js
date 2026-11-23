@@ -321,7 +321,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/status') {
       return send(res, 200, config && pat
-        ? { configured: true, org: config.org, project: config.project, me: { email: config.email, name: config.name }, expiresAt: config.expiresAt || null }
+        ? { configured: true, org: config.org, project: config.project, me: { email: config.email, name: config.name }, expiresAt: config.expiresAt || null, presence: PRESENCE_ON() }
         : { configured: false, org: config?.org || 'emr-cm', project: config?.project || 'EMR' });
     }
     if (url.pathname === '/api/config' && req.method === 'POST') {
@@ -382,6 +382,14 @@ const server = http.createServer(async (req, res) => {
       send(res, 200, { ok: true });
       setTimeout(shutdown, 200);
       return;
+    }
+    if (url.pathname === '/api/presence' && req.method === 'GET') {
+      if (!PRESENCE_ON()) return send(res, 404, { message: 'Não encontrado' });
+      if (!config || !pat) return send(res, 401, { message: 'Configure seu token primeiro.' });
+      try {
+        const j = await adoJson(PRESENCE_URL());
+        return send(res, 200, { now: new Date().toISOString(), me: config.email, users: (Array.isArray(j) ? j : j.value || []).map((d) => ({ email: d.email || d.id, name: d.name, version: d.version, lastSeen: d.lastSeen, startedAt: d.startedAt, closed: !!d.closed })) });
+      } catch (e) { return send(res, e.status === 404 ? 200 : 502, e.status === 404 ? { now: new Date().toISOString(), me: config.email, users: [] } : { message: e.message }); }
     }
     if (url.pathname === '/api/index' || url.pathname.startsWith('/api/index/')) {
       // Lista de itens do Work Session Hub (Extension Data Service), só a coleção "userWorkSessionIndex"
@@ -477,6 +485,7 @@ function openDefaultBrowser(url) {
 function shutdown() {
   log('Encerrando');
   installOnExit();
+  presenceBeat(true);
   try { server.close(); } catch { /* ignore */ }
   setTimeout(() => process.exit(0), 300);
 }
@@ -666,6 +675,27 @@ if (process.pkg) setTimeout(() => {
 // Procura versão nova ao abrir e a cada 15 min; achou, já baixa em segundo plano
 const checkAndFetch = async () => { await checkUpdate(); autoDownload(); };
 if (process.pkg) { setTimeout(checkAndFetch, 3000); setInterval(checkAndFetch, 15 * 60e3); }
+
+// ───────── Presença: quem está usando o app (desligada por padrão) ─────────
+// Só funciona com o arquivo presenca.on na pasta de configuração (%APPDATA%\ApontadorHoras). Ligada, enquanto a
+// janela está aberta grava a cada 2 min "estou aberto" (nome, e-mail, versão, horário) numa coleção própria do
+// Extension Data Service (o mesmo armazenamento da lista do hub) e mostra o botão 👥 com quem está ativo.
+// Desligada (o normal), não envia nada, não lê nada e não mostra o botão.
+const PRESENCE_ON = () => fs.existsSync(path.join(APP_DIR, 'presenca.on'));
+const PRESENCE_COLLECTION = 'apontadorHorasPresenca';
+const PRESENCE_URL = (id) => `https://extmgmt.dev.azure.com/${encodeURIComponent(config.org)}/_apis/ExtensionManagement/InstalledExtensions/SWProcessTools/philips-emr-workflow-ado/Data/Scopes/Default/Current/Collections/${PRESENCE_COLLECTION}/Documents${id ? '/' + encodeURIComponent(id) : ''}?api-version=7.1-preview.1`;
+const PRESENCE_STARTED = new Date().toISOString();
+async function presenceBeat(closing) {
+  if (!PRESENCE_ON() || !config || !pat || !config.email) return;
+  const doc = { id: config.email, email: config.email, name: config.name || config.email, version: APP_VERSION, startedAt: PRESENCE_STARTED, lastSeen: new Date().toISOString(), closed: !!closing, __etag: -1 };
+  try {
+    const r = await adoFetch(PRESENCE_URL(), { method: 'PUT', body: JSON.stringify(doc), headers: { Authorization: authHeader(pat), Accept: 'application/json', 'Content-Type': 'application/json', 'X-TFS-FedAuthRedirect': 'Suppress' }, signal: AbortSignal.timeout(closing ? 2500 : 15000) });
+    if (!r.ok) log('Presença: o Azure respondeu', r.status);
+  } catch (e) { log('Presença: não consegui enviar', e?.cause || e); }
+}
+// só conta como aberto se a janela deu sinal nos últimos 3 min (evita "fantasma" com o app esquecido sem janela)
+setTimeout(() => presenceBeat(false), 5000);
+setInterval(() => { if (Date.now() - lastPing < 180e3) presenceBeat(false); }, 120e3);
 
 // ───────── Início ─────────
 loadConfig();

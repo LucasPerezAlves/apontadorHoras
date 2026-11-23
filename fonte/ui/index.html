@@ -274,7 +274,7 @@
     .item.sel .acts { display: flex; }
   }
   .upd { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: #10261c; border-bottom: 1px solid #1f5137; color: #bbf7d0; font-size: 13px; }
-  .upd[hidden] { display: none; }
+  .upd[hidden], button[hidden] { display: none !important; }
   .upd.err { background: #2a1515; border-color: #5b2323; color: #fecaca; }
   .upd .grow { flex: 1; }
   .upd button { padding: 3px 10px; font-size: 12.5px; }
@@ -299,6 +299,7 @@
     <span class="goal"><span class="goal-txt"></span><span class="bar"><i></i></span></span>
     <button class="icon" data-act="new" title="Nova sessão">＋ Sessão</button>
     <button class="icon" data-act="reload" title="Recarregar">↻</button>
+    <button class="icon" data-act="presence" title="Quem está usando o Apontador" hidden>👥</button>
     <button class="icon" data-act="settings" title="Configurações">⚙</button>
   </header>
   <div class="upd" hidden></div>
@@ -1985,6 +1986,7 @@
       else if (act === 'c-new') openCreateCards(btn.dataset.parent ? Number(btn.dataset.parent) : null);
       else if (act === 'p-prev' || act === 'p-next') { P.month = new Date(P.month.getFullYear(), P.month.getMonth() + (act === 'p-prev' ? -1 : 1), 1); P.selDay = null; loadProd(); }
       else if (act === 'p-today') { P.month = monthStart(new Date()); P.selDay = null; loadProd(); }
+      else if (act === 'presence') openPresence();
       else if (act === 'u-go') doUpdate();
       else if (act === 'u-notes') openNotes();
       else if (act === 'u-later') {
@@ -2713,6 +2715,57 @@
     m.querySelector('.n-ok').focus();
   }
 
+  // ───────── Quem está usando (só com a presença ligada neste PC) ─────────
+  // Cada app grava "estou aberto" a cada 2 min; aqui lista quem está ativo agora, hoje e nos últimos 7 dias.
+  let presTimer = null;
+  function agoTxt(ms) {
+    const m = Math.round(ms / 60e3);
+    if (m < 1) return 'agora';
+    if (m < 60) return `há ${m} min`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `há ${h}h${pad(m % 60)}`;
+    const d = Math.floor(h / 24);
+    return `há ${d} dia${d === 1 ? '' : 's'}`;
+  }
+  async function openPresence() {
+    const m = $('.modal');
+    m.classList.add('wide');
+    m.innerHTML = `<h2>👥 Quem está usando o Apontador</h2><div class="pres-body muted">Carregando…</div>
+      <div class="foot"><span class="muted pres-at" style="font-size:12px"></span><span class="grow"></span><button class="pres-reload">↻ Atualizar</button><button class="primary pres-close">Fechar</button></div>`;
+    $('.modal-bg').classList.add('on');
+    const close = () => { clearInterval(presTimer); presTimer = null; closeModal(); };
+    m.querySelector('.pres-close').addEventListener('click', close);
+    m.querySelector('.pres-reload').addEventListener('click', () => draw());
+    const draw = async () => {
+      const body = m.querySelector('.pres-body'); if (!body) { clearInterval(presTimer); return; }
+      let j;
+      try { j = await local('/api/presence'); } catch (e) { body.innerHTML = `<div class="err">Não consegui ler: ${esc(e.message)}</div>`; return; }
+      const now = new Date(j.now).getTime();
+      const users = j.users.map((u) => {
+        const seen = new Date(u.lastSeen).getTime();
+        return { ...u, seen, active: !u.closed && now - seen < 5 * 60e3 };
+      }).sort((a, b) => (b.active - a.active) || (b.seen - a.seen));
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const nToday = users.filter((u) => u.seen >= today.getTime()).length;
+      const n7 = users.filter((u) => now - u.seen < 7 * 864e5).length;
+      const nNow = users.filter((u) => u.active).length;
+      body.classList.remove('muted');
+      body.innerHTML = `<div class="kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px">
+          <div class="kpi"><div class="l">Ativos agora</div><div class="v" style="color:#17c964">${nNow}</div><div class="h">com o app aberto</div></div>
+          <div class="kpi"><div class="l">Usaram hoje</div><div class="v">${nToday}</div><div class="h">desde 00:00</div></div>
+          <div class="kpi"><div class="l">Últimos 7 dias</div><div class="v">${n7}</div><div class="h">de ${users.length} que já usaram</div></div></div>
+        ${users.length ? `<table class="t"><tr><th></th><th>Nome</th><th>E-mail</th><th>Versão</th><th>Aberto desde</th><th style="text-align:right">Último sinal</th></tr>
+          ${users.map((u) => `<tr${u.active ? '' : ' style="opacity:.7"'}><td style="width:18px">${u.active ? '<span style="color:#17c964" title="Ativo agora">●</span>' : '<span class="muted" title="Fora">○</span>'}</td>
+            <td style="white-space:nowrap"><b>${esc(u.name || u.email)}</b>${u.email === j.me ? ' <span class="muted">(você)</span>' : ''}</td><td class="muted">${esc(u.email)}</td><td class="muted" style="white-space:nowrap">${esc(u.version || "?")}</td>
+            <td class="muted">${u.active && u.startedAt ? timeStr(new Date(u.startedAt)) : '—'}</td>
+            <td class="num">${u.active ? '<span style="color:#86efac">ativo agora</span>' : (u.closed ? 'fechou ' : '') + agoTxt(now - u.seen)}</td></tr>`).join('')}</table>`
+          : '<div class="muted">Ninguém enviou sinal ainda. Só aparece quem usa um .exe desta versão.</div>'}`;
+      m.querySelector('.pres-at').textContent = `Atualiza a cada 30 s · lido às ${timeStr(new Date())} · ativo = sinal nos últimos 5 min`;
+    };
+    await draw();
+    clearInterval(presTimer); presTimer = setInterval(draw, 30e3);
+  }
+
   // ───────── Início ─────────
   async function boot() {
     render();
@@ -2721,6 +2774,7 @@
       S.org = st.org; S.project = st.project;
       if (!st.configured) { openSetup(); return; }
       S.me = st.me;
+      { const pb = $('[data-act="presence"]'); if (pb) pb.hidden = !st.presence; }
       if (loadSnapshot()) {
         // abre na hora com a última cópia; a atualização do Azure vem logo depois, sem travar a tela
         render(); scrollToNow();
