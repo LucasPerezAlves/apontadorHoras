@@ -74,6 +74,7 @@ Ela grava no mesmo formato da extensão Work Session Hub: campos `Custom.WorkSes
 - Listas:
   - ✅ **Cards contabilizados**, com o link para o Azure e as horas de cada um.
   - ⚠ **Fechados no seu nome e sem horas suas**: cards fechados que estão atribuídos a você (*Assigned To*) e não têm horas suas, os "esquecidos". Quem só passou pelo card, fechou para outra pessoa ou limpou o responsável não entra. O botão **Apontar** já preenche o horário do fechamento. **Ocultar ▾** esconde só aquele card, todos com o mesmo título ou todos do mesmo tipo. Por padrão já vêm ocultos os títulos *Code Review*, *Integrated Test* e *Unit Test* e o tipo *Release Note*. **Mostrar** exibe os ocultos com **Reexibir**, e as listas ficam em ⚙ Configurações. Um card oculto que receber horas volta a contar normalmente.
+  - ⏳ **No seu nome, com horas suas, ainda abertos**: os que vão contar quando forem fechados. Cards em que você tem horas mas que estão com outra pessoa ou sem responsável não entram; o aviso "N com horas suas não estão no seu nome" mostra quais são, com o responsável atual.
   - ⏳ **Com horas, ainda abertos**, que vão contar quando forem fechados.
 
 ### ⏱ Cronômetro com cards pausados

@@ -1147,6 +1147,7 @@
           myHours: entries.reduce((a, e) => a + entryHours(e), 0),
           // "esquecido" só se o card fechou atribuído a você (quem só passou pelo card ou fechou para outro não conta)
           mineToClose: who(f['System.AssignedTo']) === S.me.email,
+          assignee: f['System.AssignedTo'] ? (f['System.AssignedTo'].displayName || f['System.AssignedTo'].uniqueName || '') : '',
         };
       });
       if (S.side !== 'recent') renderList();
@@ -1225,10 +1226,15 @@
           : h.k === 'id' ? `<button class="chip-btn" data-act="p-unhide" data-id="${r.id}" title="Voltar a mostrar este card">Reexibir</button> `
           : `<span class="muted" style="font-size:11.5px">oculto: ${esc(h.text)}</span> <button class="chip-btn" data-act="p-unhidepat" data-k="${h.k}" data-v="${esc(h.v)}" title="Voltar a mostrar todos os cards com ${h.k === 'type' ? 'este tipo' : 'este título'}">Reexibir</button> `}<button class="chip-btn" data-act="p-log" data-id="${r.id}">Apontar</button></td></tr>`; }).join('')}</table>` : '<div class="muted">Todos os fechados sem horas deste período estão ocultos.</div>'}</div>`;
     }
-    const open = P.rows.filter((r) => !r.closed && r.myHours > 0 && !r.removed).sort((x, y) => y.myHours - x.myHours);
-    if (open.length) {
-      html += `<div class="p-sec"><h3>⏳ Com horas suas, ainda abertos (${open.length}): contam quando chegarem em ${esc(closedNamesText())}</h3><table class="t"><tr><th>Card</th><th>Título</th><th>Estado</th><th style="text-align:right">Suas horas</th></tr>
-        ${open.map((r) => `<tr><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.state)}</td><td class="num">${fmtH(r.myHours)}</td></tr>`).join('')}</table></div>`;
+    // Abertos com horas suas: só os que estão no seu nome. Os que você passou para outra pessoa (ou ficaram sem
+    // responsável) ficam fora da lista, num aviso que dá para abrir.
+    const openAll = P.rows.filter((r) => !r.closed && r.myHours > 0 && !r.removed).sort((x, y) => y.myHours - x.myHours);
+    const open = openAll.filter((r) => r.mineToClose), passed = openAll.filter((r) => !r.mineToClose);
+    if (open.length || passed.length) {
+      const pNote = passed.length ? ` <span class="muted hid-note">· ${passed.length} com horas suas não ${passed.length === 1 ? 'está' : 'estão'} no seu nome <button class="chip-btn" data-act="p-passed">${P.showPassed ? 'Esconder' : 'Mostrar'}</button></span>` : '';
+      const list = P.showPassed ? open.concat(passed) : open;
+      html += `<div class="p-sec"><h3 title="Cards abertos, no seu nome (Assigned To), em que você tem horas">⏳ No seu nome, com horas suas, ainda abertos (${open.length}): contam quando chegarem em ${esc(closedNamesText())}${pNote}</h3>${list.length ? `<table class="t"><tr><th>Card</th><th>Título</th><th>Estado</th>${P.showPassed ? '<th>Responsável</th>' : ''}<th style="text-align:right">Suas horas</th></tr>
+        ${list.map((r) => `<tr${r.mineToClose ? '' : ' class="hidrow"'}><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.state)}</td>${P.showPassed ? `<td class="muted">${r.mineToClose ? 'você' : esc(r.assignee || 'sem responsável')}</td>` : ''}<td class="num">${fmtH(r.myHours)}</td></tr>`).join('')}</table>` : '<div class="muted">Nenhum card aberto no seu nome com horas suas.</div>'}</div>`;
     }
     if (P.loading) html += '<div class="muted">Atualizando…</div>';
     el.innerHTML = html;
@@ -1999,6 +2005,7 @@
         renderUpd();
       }
       else if (act === 'p-hid') { P.showHidden = !P.showHidden; renderProd(); }
+      else if (act === 'p-passed') { P.showPassed = !P.showPassed; renderProd(); }
       else if (act === 'p-hidemenu') openHideMenu(btn, id);
       else if (act === 'p-hide') { closeHideMenu(); if (!prefs.hiddenIds.includes(id)) prefs.hiddenIds.push(id); savePrefs(); renderProd(); toast(`#${id} não aparece mais na lista "sem horas". Para reexibir, clique em Mostrar ao lado dos ocultos.`); }
       else if (act === 'p-hidetitle' || act === 'p-hidetype') {

@@ -1,1 +1,1 @@
-- Melhorias internas
+- Produtividade: "ainda abertos" mostra só os cards no seu nome; os que você passou para outra pessoa ficam num aviso que dá para abrir
