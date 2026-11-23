@@ -262,7 +262,7 @@
   .muted { color: #8b93a3; }
   .warn-h { color: #fde68a !important; }
   .chip-btn { padding: 2px 8px; font-size: 12px; }
-  .chip-btn.ghost { background: transparent; color: #9aa3b2; }
+  .chip-btn.subtle { background: transparent; color: #9aa3b2; }
   tr.hidrow td { opacity: .55; }
   .hid-note { font-weight: 400; font-size: 12px; margin-left: 6px; }
   .hmenu { position: fixed; z-index: 30; background: #1f232b; border: 1px solid #434a59; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.45); padding: 4px; display: flex; flex-direction: column; min-width: 240px; max-width: 360px; }
@@ -1220,7 +1220,7 @@
       const hidNote = st.hidden.length ? ` <span class="muted hid-note">· ${st.hidden.length} oculto${st.hidden.length === 1 ? '' : 's'} (${esc(why.join(', '))}) <button class="chip-btn" data-act="p-hid">${P.showHidden ? 'Esconder' : 'Mostrar'}</button></span>` : '';
       html += `<div class="p-sec"><h3 class="warn-h" title="Cards fechados que estão atribuídos a você (Assigned To) e não têm horas suas">⚠ Fechados ${esc(label)} no seu nome e sem horas suas (${st.noHours.length}): não contam até você apontar${hidNote}</h3>${shown.length ? `<table class="t"><tr><th>Fechado em</th><th>Card</th><th>Título</th><th>Tipo</th><th></th></tr>
         ${shown.sort((x, y) => y.closed - x.closed).map((r) => { const h = hiddenRule(r); return `<tr${h ? ' class="hidrow"' : ''}><td class="num" style="text-align:left">${when(r.closed)}</td><td>${link(r)}</td><td>${esc(r.title)}</td><td class="muted">${esc(r.type)}</td><td class="num" style="white-space:nowrap">${
-          !h ? `<button class="chip-btn ghost" data-act="p-hidemenu" data-id="${r.id}" title="Esconder este card (ou todos do mesmo título ou tipo) desta lista">Ocultar ▾</button> `
+          !h ? `<button class="chip-btn subtle" data-act="p-hidemenu" data-id="${r.id}" title="Esconder este card (ou todos do mesmo título ou tipo) desta lista">Ocultar ▾</button> `
           : h.k === 'id' ? `<button class="chip-btn" data-act="p-unhide" data-id="${r.id}" title="Voltar a mostrar este card">Reexibir</button> `
           : `<span class="muted" style="font-size:11.5px">oculto: ${esc(h.text)}</span> <button class="chip-btn" data-act="p-unhidepat" data-k="${h.k}" data-v="${esc(h.v)}" title="Voltar a mostrar todos os cards com ${h.k === 'type' ? 'este tipo' : 'este título'}">Reexibir</button> `}<button class="chip-btn" data-act="p-log" data-id="${r.id}">Apontar</button></td></tr>`; }).join('')}</table>` : '<div class="muted">Todos os fechados sem horas deste período estão ocultos.</div>'}</div>`;
     }

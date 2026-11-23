@@ -1,3 +1,1 @@
-- "Fechados sem horas" agora mostra só cards fechados no seu nome (Assigned To): quem só passou pelo card ou o deixou para outra pessoa não vê mais
-- Ocultar ▾: esconda só aquele card, todos com o mesmo título ou todos do mesmo tipo
-- Unit Test e Release Note já vêm ocultos (dá para reexibir)
+- Corrige o botão "Ocultar ▾" da lista de fechados sem horas: ele aparecia solto em cima do título; agora fica ao lado do "Apontar"
