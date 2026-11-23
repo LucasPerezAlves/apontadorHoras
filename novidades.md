@@ -1,3 +1,3 @@
-- Aba Cards: botão ✏ em cada card para editar o título e o estado
-- Aba Cards: botão 🗑 para excluir o card (vai para a lixeira do Azure; avisa se ele tem horas apontadas)
-- Trocar de aba ficou instantâneo: Produtividade e Cards são carregadas por trás
+- Tema escuro também nos controles: ícones do calendário e do relógio, checkboxes e listas agora aparecem
+- Botões e textos que estavam apagados ficaram mais visíveis
+- Apontamento: o Tab pula direto de um campo para o outro (item, data, início, fim, notas, salvar)

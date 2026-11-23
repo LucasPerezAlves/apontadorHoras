@@ -8,7 +8,15 @@
 <link rel="icon" type="image/png" sizes="32x32" href="__ICON_32__">
 <link rel="icon" type="image/png" sizes="192x192" href="__ICON_192__">
 <style>
+  /* color-scheme dark: o navegador desenha os controles nativos no tema escuro (ícone do calendário e do
+     relógio, setas do número, checkbox, lista do select, "x" da busca e barras de rolagem) */
+  :root { color-scheme: dark; accent-color: #3b82f6; }
   html, body { margin: 0; height: 100%; background: #16181d; }
+  ::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .9; }
+  ::-webkit-calendar-picker-indicator:hover { opacity: 1; background-color: #2f3440; border-radius: 3px; }
+  select option, select optgroup { background: #1b1e25; color: #e6e8ec; }
+  * { scrollbar-color: #4a5160 transparent; }
+  ::placeholder { color: #7d8596; opacity: 1; }
   * { box-sizing: border-box; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
   .panel { position: fixed; inset: 0; background: #16181d; color: #e6e8ec; display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
   header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #2b2f38; flex-wrap: wrap; }
@@ -22,9 +30,10 @@
   .cedit { display: flex; gap: 4px; align-items: center; }
   .cedit input { flex: 1; min-width: 220px; padding: 3px 6px; font-size: 13px; }
   select.c-edit-st { padding: 2px 4px; font-size: 12.5px; }
-  tr.crow .cacts .ibtn[data-act="c-edit"], tr.crow .cacts .ibtn[data-act="c-del"] { opacity: .35; }
+  tr.crow .cacts .ibtn[data-act="c-edit"], tr.crow .cacts .ibtn[data-act="c-del"] { opacity: .65; }
   tr.crow:hover .cacts .ibtn { opacity: 1; }
-  button:disabled { opacity: .5; cursor: default; }
+  button:disabled { opacity: .55; cursor: default; }
+  button.primary:disabled { opacity: 1; background: #263c6b; border-color: #263c6b; color: #b4c2e3; }
   a { color: #93c5fd; }
   .icon { padding: 5px 8px; }
   .week-label { font-weight: 600; min-width: 150px; text-align: center; }
@@ -37,7 +46,7 @@
   .body { flex: 1; display: flex; min-height: 0; }
   aside { width: 290px; border-right: 1px solid #2b2f38; display: flex; flex-direction: column; min-height: 0; }
   .search { padding: 10px; border-bottom: 1px solid #2b2f38; display: flex; gap: 6px; }
-  input, select, textarea { background: #0f1115; color: #e6e8ec; border: 1px solid #353a45; border-radius: 6px; padding: 6px 8px; font-size: 13px; width: 100%; }
+  input, select, textarea { background: #0f1115; color: #e6e8ec; border: 1px solid #434a59; border-radius: 6px; padding: 6px 8px; font-size: 13px; width: 100%; }
   input:focus, select:focus, textarea:focus { outline: 2px solid #2563eb; border-color: transparent; }
   .list { overflow: auto; flex: 1; padding: 6px; }
   .sec { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #8b93a3; padding: 10px 6px 4px; }
@@ -49,7 +58,7 @@
   .item .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item .m { color: #8b93a3; font-size: 11px; }
   .item .h { font-variant-numeric: tabular-nums; color: #cbd5e1; font-size: 12px; }
-  .item .acts { display: flex; gap: 2px; opacity: 0; }
+  .item .acts { display: flex; gap: 2px; opacity: .5; }
   .item:hover .acts, .item.sel .acts { opacity: 1; }
   .item .acts button { padding: 2px 6px; font-size: 12px; background: transparent; border-color: transparent; }
   .item .acts button:hover { background: #2f3440; }
@@ -68,7 +77,7 @@
   .scroller { flex: 1; overflow: auto; }
   .grid { display: grid; grid-template-columns: 52px repeat(7, minmax(90px, 1fr)); position: relative; }
   .gutter { position: relative; }
-  .gutter span { position: absolute; right: 6px; font-size: 11px; color: #6b7280; transform: translateY(-50%); }
+  .gutter span { position: absolute; right: 6px; font-size: 11px; color: #8b93a3; transform: translateY(-50%); }
   .col { position: relative; border-left: 1px solid #2b2f38; cursor: crosshair; user-select: none; }
   .col.we { background: rgba(255,255,255,.015); }
   .col.today { background: rgba(37,99,235,.05); }
@@ -124,7 +133,7 @@
   .pk-c { font-size: 26px; font-weight: 700; color: #fde68a; font-variant-numeric: tabular-nums; margin: 4px 0 2px; }
   .pk-b { display: flex; gap: 5px; margin-top: 8px; flex-wrap: wrap; }
   .pk-b button { padding: 4px 8px; font-size: 12px; }
-  .pk-b .go { background: #16a34a; border-color: #16a34a; color: #fff; }
+  .pk-b .go { background: #15803d; border-color: #15803d; color: #fff; }
   .pk-b .ap { background: #2563eb; border-color: #2563eb; color: #fff; }
   @media (max-width: 1100px) { .tlay { flex-direction: column; align-items: stretch; } .parked { width: auto; } .tw { max-width: none; } }
   .tcard { background: #1b1e25; border: 1px solid #2b2f38; border-radius: 12px; padding: 16px 18px; }
@@ -134,8 +143,8 @@
   .tstate { text-align: center; color: #9aa3b2; font-size: 13px; min-height: 18px; }
   .tbtns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
   .tbtns button { padding: 11px 6px; font-size: 14px; font-weight: 600; border-radius: 8px; }
-  .tbtns .go { background: #16a34a; border-color: #16a34a; color: #fff; }
-  .tbtns .pz { background: #ca8a04; border-color: #ca8a04; color: #fff; }
+  .tbtns .go { background: #15803d; border-color: #15803d; color: #fff; }
+  .tbtns .pz { background: #a16207; border-color: #a16207; color: #fff; }
   .tbtns .ap { background: #2563eb; border-color: #2563eb; color: #fff; }
   .tbtns .st { background: #b91c1c; border-color: #b91c1c; color: #fff; }
   .seg { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #23262e; font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -147,7 +156,7 @@
   .range { display: flex; gap: 4px; padding: 0 10px 8px; align-items: center; }
   .range button { padding: 2px 8px; font-size: 11.5px; border-radius: 10px; }
   .range button.on { background: #2563eb; border-color: #2563eb; color: #fff; }
-  .range .hint { margin-left: auto; font-size: 11px; color: #6b7280; }
+  .range .hint { margin-left: auto; font-size: 11px; color: #8b93a3; }
   .item .new { font-size: 10px; padding: 0 5px; border-radius: 6px; background: #1e3a8a; color: #bfdbfe; margin-left: 4px; }
   .cardsv { flex: 1; overflow: auto; padding: 14px 18px; display: none; }
   .cardsv.on { display: block; }
@@ -233,7 +242,7 @@
   .bars .b.we i { background: #475569; }
   .bars .b span { font-size: 10px; color: #cbd5e1; margin-bottom: 2px; }
   .xlab { display: flex; gap: 4px; margin-top: 4px; }
-  .xlab span { flex: 1; text-align: center; font-size: 10px; color: #6b7280; }
+  .xlab span { flex: 1; text-align: center; font-size: 10px; color: #8b93a3; }
   .xlab span.today { color: #93c5fd; font-weight: 700; }
   .p-sec { background: #1b1e25; border: 1px solid #2b2f38; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
   table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -1979,6 +1988,34 @@
     }
   });
 
+  // Tab num campo de data/hora vai direto para o próximo campo, em vez de passar por dia, mês, ano e o
+  // botão do calendário (ou hora, minuto e o relógio)
+  const tabbables = (root) => [...root.querySelectorAll('input, select, textarea, button, a[href], [tabindex]')]
+    .filter((e) => e.tabIndex >= 0 && !e.disabled && e.type !== 'hidden' && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden');
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Tab' || ev.altKey || ev.ctrlKey) return;
+    const t = ev.target, modal = $('.modal-bg.on .modal');
+    const dateLike = t instanceof HTMLInputElement && ['date', 'time', 'datetime-local', 'month', 'week'].includes(t.type);
+    // com um modal aberto, o Tab dá a volta dentro dele (não escapa para a tela de trás)
+    if (modal && !dateLike) {
+      const list = tabbables(modal);
+      if (!list.length) return;
+      const i = list.indexOf(t);
+      if (i < 0 || (!ev.shiftKey && i === list.length - 1) || (ev.shiftKey && i === 0)) {
+        ev.preventDefault();
+        (ev.shiftKey ? list[list.length - 1] : list[0]).focus();
+      }
+      return;
+    }
+    if (!dateLike) return;
+    const root = t.closest('.modal') || document.body;
+    const list = tabbables(root), i = list.indexOf(t);
+    if (i < 0) return;
+    ev.preventDefault();
+    const next = list[(i + (ev.shiftKey ? -1 : 1) + list.length) % list.length];
+    next.focus();
+    if (next.select && /^(text|search|number)$/.test(next.type || '')) next.select();
+  }, true);
   document.addEventListener('dblclick', (ev) => {
     const crow = ev.target.closest('tr.crow');
     if (crow && !ev.target.closest('a,button,input') && S.me) { ev.preventDefault(); const id = Number(crow.dataset.cid); adoptCard(id); quickLog(id); return; }
@@ -2071,17 +2108,17 @@
         <label>Fim<input type="time" class="f-end" step="300" value="${end ? timeStr(end) : ''}" ${end ? '' : 'disabled'}></label>
       </div>
       <div class="row" style="align-items:center">
-        <label class="chk"><input type="checkbox" class="f-open" ${end ? '' : 'checked'}> Em andamento (sem fim)</label>
+        <label class="chk"><input type="checkbox" class="f-open" tabindex="-1" ${end ? '' : 'checked'}> Em andamento (sem fim)</label>
         <span class="grow"></span>
-        <span class="chips"><button data-dur="30">30m</button><button data-dur="60">1h</button><button data-dur="120">2h</button><button data-dur="240">4h</button></span>
+        <span class="chips"><button data-dur="30" tabindex="-1">30m</button><button data-dur="60" tabindex="-1">1h</button><button data-dur="120" tabindex="-1">2h</button><button data-dur="240" tabindex="-1">4h</button></span>
       </div>
       <label>Notas<textarea class="f-notes" rows="2" placeholder="Opcional">${esc(entry?.notes || '')}</textarea></label>
       <div class="dur" style="color:#8b93a3;font-size:12px"></div>
       <div class="err"></div>
       <div class="foot">
-        ${editing ? '<button class="danger f-del">Excluir</button>' : ''}
+        ${editing ? '<button class="danger f-del" tabindex="-1">Excluir</button>' : ''}
         <span class="grow"></span>
-        <button class="f-cancel">Cancelar</button>
+        <button class="f-cancel" tabindex="-1" title="Esc">Cancelar</button>
         <button class="primary f-save">${prefs.dryRun ? 'Validar (teste)' : 'Salvar'}</button>
       </div>`;
     $('.modal-bg').classList.add('on');
@@ -2575,7 +2612,7 @@
   // (ex.: depois de excluir ou fechar cards no Azure). Não roda enquanto você digita ou edita algo.
   const AUTO_MS = 30e3;
   let lastSync = Date.now(), syncing = false;
-  const syncLabel = (t, color) => { const el = $('.st-sync'); if (el) { el.textContent = t; el.style.color = color || '#6b7280'; } };
+  const syncLabel = (t, color) => { const el = $('.st-sync'); if (el) { el.textContent = t; el.style.color = color || '#8b93a3'; } };
   const editingNow = () => {
     const ae = document.activeElement;
     return $('.modal-bg').classList.contains('on') || !!drag || S.busy
