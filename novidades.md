@@ -1,1 +1,2 @@
-- Produtividade: "ainda abertos" mostra só os cards no seu nome; os que você passou para outra pessoa ficam num aviso que dá para abrir
+- O app consulta o Azure bem menos (cerca de 10x menos): ele estava contribuindo para o aviso de limite de uso do Azure DevOps
+- Se o Azure avisar que está limitando, a atualização automática pausa sozinha por 10 minutos

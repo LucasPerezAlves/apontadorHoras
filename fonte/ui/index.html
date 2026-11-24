@@ -452,13 +452,28 @@
     if (!res.ok) throw new Error(j.message || `Erro ${res.status}`);
     return j;
   }
+  // Freio: quando o Azure avisa que está segurando as requisições (limite de uso por pessoa) ou uma consulta
+  // demora demais, a atualização automática pausa por 10 min. O que você faz na mão continua funcionando.
+  const THROTTLE = { until: 0 };
+  function noteThrottle(why) {
+    const until = Date.now() + 10 * 60e3;
+    if (until - THROTTLE.until < 60e3) return;
+    THROTTLE.until = until;
+    console.warn('[Apontador] Azure pediu calma:', why);
+    syncLabel(`⏸ o Azure pediu calma: atualização automática pausada até ${timeStr(new Date(until))}`, '#fde68a');
+  }
+  const throttled = () => Date.now() < THROTTLE.until;
   async function api(path, { method = 'GET', body, headers = {} } = {}) {
     let res;
+    const t0 = Date.now();
     try {
       res = await fetch('/api/ado' + path, { method, body, headers: { 'X-App-Token': APP_TOKEN, Accept: 'application/json', ...headers } });
     } catch {
       throw new Error('O app foi fechado. Abra o ApontadorHoras.exe de novo.');
     }
+    const rl = res.headers.get('X-Apontador-RateLimit');
+    if (rl || res.status === 429) noteThrottle(rl || 'HTTP 429');
+    else if (Date.now() - t0 > 8000 && /\/wiql/.test(path)) noteThrottle(`consulta levou ${Math.round((Date.now() - t0) / 1000)} s`);
     const text = await res.text();
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch { /* não-JSON */ }
@@ -569,14 +584,26 @@
     return it;
   }
 
-  async function loadAll() {
+  // Busca completa no Azure (consulta WIQL + lista do hub): ao abrir, no ↻ e a cada 15 min. Entre uma e outra,
+  // a atualização automática só relê os cards que o app já conhece (uma chamada barata).
+  const FULL_MS = 15 * 60e3;
+  let lastFull = 0, lastIds = [];
+  async function loadAll(light) {
+    if (light && lastFull && Date.now() - lastFull < FULL_MS) {
+      const all = await getItems([...new Set([...S.items.keys(), ...prefs.pinned, ...(S.hubIds || [])])]);
+      S.items = new Map(all.map((w) => [w.id, toItem(w)]));
+      saveSnapshot(all);
+      return;
+    }
+    // Sem "EVER @Me" (consulta ao histórico, das mais caras para o Azure): os cards em que você apontou horas
+    // já vêm da lista do hub, e os que estão com você, desta consulta.
     const base = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.ChangedDate] >= @Today - 45`;
-    const qIds = wiql(`${base} AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me) ORDER BY [System.ChangedDate] DESC`)
-      .catch((e) => { if (e.status === 401) throw e; return wiql(`${base} AND [System.AssignedTo] = @Me ORDER BY [System.ChangedDate] DESC`); });
+    const qIds = wiql(`${base} AND [System.AssignedTo] = @Me ORDER BY [System.ChangedDate] DESC`);
     const qHub = readIndex().then((x) => x?.workItems || []).catch((e) => { if (e.code !== 'EXT_SCOPE') console.warn('[Apontador] índice', e); return null; });
     // os itens já conhecidos não precisam esperar a consulta: começam a vir junto
     const qKnown = getItems([...prefs.pinned, ...prefs.known, ...(S.hubIds || [])]);
     const [ids, hubRes, known] = await Promise.all([qIds, qHub, qKnown]);
+    lastFull = Date.now(); lastIds = ids;
     const hubIds = hubRes || S.hubIds || [];
     if (hubRes) S.hubIds = hubRes;
     const have = new Set(known.map((w) => w.id));
@@ -861,7 +888,7 @@
         const who = (x) => (x && (x.uniqueName || x.displayName) || '');
         return { ...it, created: new Date(w.fields['System.CreatedDate']), createdBy: who(w.fields['System.CreatedBy']), createdByName: w.fields['System.CreatedBy']?.displayName || '' };
       }).sort((a, b) => b.created - a.created);
-      R.key = key; R.dataKey = key;
+      R.key = key; R.dataKey = key; R.at = Date.now();
     } catch (e) { R.error = e.message; }
     finally { R.loading = false; renderRecent(); }
   }
@@ -1127,10 +1154,10 @@
     if (!silent) { P.loading = true; P.error = ''; P.rows = []; renderProd(); }
     try {
       const a = ymdW(addDays(from, -1)), b = ymdW(addDays(to, 1));
-      const q = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND (([Microsoft.VSTS.Common.ClosedDate] >= '${a}' AND [Microsoft.VSTS.Common.ClosedDate] < '${b}') OR ([Microsoft.VSTS.Common.StateChangeDate] >= '${a}' AND [Microsoft.VSTS.Common.StateChangeDate] < '${b}')) AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me OR [Microsoft.VSTS.Common.ClosedBy] = @Me)`;
+      const q = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND (([Microsoft.VSTS.Common.ClosedDate] >= '${a}' AND [Microsoft.VSTS.Common.ClosedDate] < '${b}') OR ([Microsoft.VSTS.Common.StateChangeDate] >= '${a}' AND [Microsoft.VSTS.Common.StateChangeDate] < '${b}')) AND [System.AssignedTo] = @Me`; // sem EVER: os cards com horas suas vêm da lista do hub
       let ids = [];
       try { ids = await wiql(q, S.project, 2000); }
-      catch (e) { if (e.status === 401) throw e; ids = await wiql(q.replace(' OR [System.AssignedTo] EVER @Me', ''), S.project, 2000); }
+      catch (e) { if (e.status === 401) throw e; ids = []; }
       // Também os itens onde você tem sessões (podem ter sido fechados por outra pessoa)
       const withMine = [...S.items.values()].filter((it) => it.entries.some(isMine)).map((it) => it.id);
       const all = await getItemsWith([...ids, ...withMine, ...(S.hubIds || [])], PROD_FIELDS);
@@ -1521,7 +1548,7 @@
     try {
       const base = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.ChangedDate] >= @Today - 120`;
       let ids = [];
-      try { ids = await wiql(`${base} AND ([System.AssignedTo] = @Me OR [System.AssignedTo] EVER @Me OR [System.CreatedBy] = @Me) ORDER BY [System.ChangedDate] DESC`, S.project, 600); }
+      try { ids = await wiql(`${base} AND ([System.AssignedTo] = @Me OR [System.CreatedBy] = @Me) ORDER BY [System.ChangedDate] DESC`, S.project, 600); }
       catch (e) { if (e.status === 401) throw e; ids = await wiql(`${base} AND ([System.AssignedTo] = @Me OR [System.CreatedBy] = @Me) ORDER BY [System.ChangedDate] DESC`, S.project, 600); }
       const withMine = [...S.items.values()].filter((it) => it.entries.some(isMine)).map((it) => it.id);
       const all = await getItemsWith([...ids, ...withMine, ...(S.hubIds || [])], CARD_FIELDS);
@@ -1928,9 +1955,9 @@
       : v === 'timer' ? 'Apontar grava o tempo até agora e continua contando · Parar/Apontar grava tudo e zera. O cronômetro continua salvo se você fechar o app.'
       : v === 'cards' ? 'Seus cards: atribuídos a você, criados por você ou com horas suas · clique 2x num card para apontar'
       : 'Arraste no calendário para criar uma sessão · clique numa sessão para editar';
-    if (v === 'prod') loadProd(!(P.rows.length && P.at && Date.now() - P.at < 20e3));
+    if (v === 'prod') loadProd(!(P.rows.length && P.at && Date.now() - P.at < TAB_STALE_MS));
     if (v === 'timer') renderTimer();
-    if (v === 'cards') loadCards(false);
+    if (v === 'cards') loadCards(!!(C.rows.length && C.at && Date.now() - C.at > TAB_STALE_MS));
   }
 
   // ───────── Interações ─────────
@@ -1940,7 +1967,7 @@
   }
   async function reload(toNow) {
     const ok = await run('Carregando suas sessões…', loadAll);
-    if (ok) { lastSync = Date.now(); syncLabel(`✓ atualizado às ${timeStr(new Date())}`); }
+    if (ok) { lastSync = Date.now(); if (!throttled()) syncLabel(`✓ atualizado às ${timeStr(new Date())}`); }
     if (ok && toNow) scrollToNow();
   }
 
@@ -2750,7 +2777,7 @@
       const now = new Date(j.now).getTime();
       const users = j.users.map((u) => {
         const seen = new Date(u.lastSeen).getTime();
-        return { ...u, seen, active: !u.closed && now - seen < 5 * 60e3 };
+        return { ...u, seen, active: !u.closed && now - seen < 11 * 60e3 };
       }).sort((a, b) => (b.active - a.active) || (b.seen - a.seen));
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const nToday = users.filter((u) => u.seen >= today.getTime()).length;
@@ -2767,7 +2794,7 @@
             <td class="muted">${u.active && u.startedAt ? timeStr(new Date(u.startedAt)) : '—'}</td>
             <td class="num">${u.active ? '<span style="color:#86efac">ativo agora</span>' : (u.closed ? 'fechou ' : '') + agoTxt(now - u.seen)}</td></tr>`).join('')}</table>`
           : '<div class="muted">Ninguém enviou sinal ainda. Só aparece quem usa um .exe desta versão.</div>'}`;
-      m.querySelector('.pres-at').textContent = `Atualiza a cada 30 s · lido às ${timeStr(new Date())} · ativo = sinal nos últimos 5 min`;
+      m.querySelector('.pres-at').textContent = `Atualiza a cada 30 s · lido às ${timeStr(new Date())} · ativo = sinal nos últimos 11 min (o app avisa a cada 5)`;
     };
     await draw();
     clearInterval(presTimer); presTimer = setInterval(draw, 30e3);
@@ -2786,11 +2813,11 @@
         // abre na hora com a última cópia; a atualização do Azure vem logo depois, sem travar a tela
         render(); scrollToNow();
         loadHolidays().then(() => { if (!editingNow()) render(); });
-        autoRefresh('abertura', true);
+        autoRefresh('abertura', true).then(() => setTimeout(prefetchTabs, 10e3));
       } else {
         await loadHolidays();
         await reload(true);
-        setTimeout(prefetchTabs, 2000);
+        setTimeout(prefetchTabs, 10e3);
       }
       showWhatsNew();
       const n = daysLeft(st.expiresAt);
@@ -2809,9 +2836,11 @@
   setInterval(() => { if (S.me && !S.busy && !drag && !$('.modal-bg').classList.contains('on')) render(); }, 60e3);
 
   // ───────── Atualização automática ─────────
-  // Recarrega do Azure a cada 30 s com a janela visível e sempre que você volta para ela
-  // (ex.: depois de excluir ou fechar cards no Azure). Não roda enquanto você digita ou edita algo.
-  const AUTO_MS = 30e3;
+  // O Azure DevOps limita o uso por pessoa (e o app usa o seu token): se o app consulta demais, até o Azure no
+  // navegador fica lento para você. Por isso: atualização leve a cada 3 min com a janela visível (relê os cards
+  // conhecidos), busca completa a cada 15 min, ao voltar para a janela só se passou mais de 1 min, e pausa de
+  // 10 min quando o Azure pede calma. Não roda enquanto você digita ou edita algo.
+  const AUTO_MS = 3 * 60e3, TAB_STALE_MS = 5 * 60e3;
   let lastSync = Date.now(), syncing = false;
   const syncLabel = (t, color) => { const el = $('.st-sync'); if (el) { el.textContent = t; el.style.color = color || '#8b93a3'; } };
   const editingNow = () => {
@@ -2822,41 +2851,38 @@
   // Deixa Produtividade e Cards prontas antes de você clicar nelas (por trás, sem tela de carregando)
   let prefetching = false;
   async function prefetchTabs() {
-    if (!S.me || prefetching) return;
+    if (!S.me || prefetching || throttled()) return;
     prefetching = true;
     try {
-      const old = (t) => !t || Date.now() - t > 120e3;
+      const old = (t) => !t || Date.now() - t > TAB_STALE_MS;
       if (S.view !== 'prod' && old(P.at)) await loadProd(true, true).catch(() => {});
       if (S.view !== 'cards' && old(C.at)) await loadCards(true, true).catch(() => {});
     } finally { prefetching = false; }
   }
   async function autoRefresh(why, force) {
-    if (!S.me || syncing || (!force && editingNow())) return;
+    if (!S.me || syncing || (!force && (editingNow() || throttled()))) return;
     syncing = true; syncLabel('↻ atualizando…');
     try {
       const scroll = $('.scroller')?.scrollTop;
-      await Promise.all([loadHolidays(), loadAll()]);
+      await Promise.all([loadHolidays(), loadAll(why !== 'abertura')]);
+      // a aba que está na tela só consulta de novo se os dados tiverem mais de 5 min
+      const stale = (t) => !t || Date.now() - t > TAB_STALE_MS;
       const jobs = [];
-      if (S.view === 'prod') jobs.push(loadProd(true, true));
-      if (S.view === 'cards') jobs.push(loadCards(true, true));
-      if (S.side === 'recent') jobs.push(loadRecent(true, true));
+      if (S.view === 'prod' && stale(P.at)) jobs.push(loadProd(true, true));
+      if (S.view === 'cards' && stale(C.at)) jobs.push(loadCards(true, true));
+      if (S.side === 'recent' && stale(R.at)) jobs.push(loadRecent(true, true));
       await Promise.all(jobs);
       if (!editingNow()) { render(); if (scroll != null && $('.scroller')) $('.scroller').scrollTop = scroll; }
-      // as abas que não estão na tela: atualiza por trás, uma de cada vez, se os dados tiverem mais de 2 min
-      if (S.view !== 'prod') P.loadedKey = '';
-      if (S.view !== 'cards') C.key = '';
-      if (S.side !== 'recent') R.key = '';
       lastSync = Date.now();
-      setTimeout(prefetchTabs, 1500);
-      syncLabel(`✓ atualizado às ${timeStr(new Date())}`);
+      if (!throttled()) syncLabel(`✓ atualizado às ${timeStr(new Date())}`);
     } catch (e) {
       console.warn('[Apontador] atualização automática', why, e);
       syncLabel('⚠ não consegui atualizar agora', '#fca5a5');
     } finally { syncing = false; }
   }
   setInterval(() => { if (document.visibilityState === 'visible' && Date.now() - lastSync >= AUTO_MS) autoRefresh('intervalo'); }, 5000);
-  window.addEventListener('focus', () => { if (Date.now() - lastSync > 4000) autoRefresh('foco'); });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastSync > 4000) autoRefresh('visível'); });
+  window.addEventListener('focus', () => { if (Date.now() - lastSync > 60e3) autoRefresh('foco'); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastSync > 60e3) autoRefresh('visível'); });
   boot();
 })();
 </script>

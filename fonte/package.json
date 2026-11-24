@@ -1,6 +1,6 @@
 {
   "name": "apontador-horas",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "description": "Apontador de Horas para o Work Session Hub do Azure DevOps",
   "main": "server.js",
   "bin": "server.js",

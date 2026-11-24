@@ -232,9 +232,9 @@ async function exportSessions(from, to) {
 // ───────── HTTP ─────────
 let lastPing = Date.now();
 let byeTimer = null;
-function send(res, status, body, type = 'application/json; charset=utf-8') {
+function send(res, status, body, type = 'application/json; charset=utf-8', extra = {}) {
   const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
-  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...extra });
   res.end(data);
 }
 function readBody(req, limit = 5 * 1024 * 1024) {
@@ -436,11 +436,17 @@ const server = http.createServer(async (req, res) => {
       });
       const buf = Buffer.from(await upstream.arrayBuffer());
       const ms = Date.now() - t0;
+      // Limite de uso do Azure DevOps (por pessoa): repassa o aviso para a janela pausar o automático
+      const rlDelay = upstream.headers.get('x-ratelimit-delay'), rlRetry = upstream.headers.get('retry-after');
+      const rlLeft = Number(upstream.headers.get('x-ratelimit-remaining')), rlMax = Number(upstream.headers.get('x-ratelimit-limit'));
+      const rlInfo = rlDelay || rlRetry || upstream.status === 429 || (rlMax > 0 && rlLeft >= 0 && rlLeft < rlMax * 0.25)
+        ? [rlDelay && `atraso ${rlDelay}s`, rlRetry && `tente em ${rlRetry}s`, rlMax > 0 && `restam ${rlLeft}/${rlMax}`, upstream.status === 429 && 'HTTP 429'].filter(Boolean).join(', ') || 'limite' : '';
+      if (rlInfo) log(`Azure limitando o uso (${rlInfo}) · ${req.method} ${rest.slice(0, 60)}`);
       if (ms > 1500) log(`Azure lento: ${ms} ms · ${req.method} ${rest.slice(0, 70)} · ${url.search.includes('ids=') ? `${(url.search.match(/ids=([\d%C,]+)/) || ['', ''])[1].split(/,|%2C/i).length} itens · ` : ''}${Math.round(buf.length / 1024)} KB`);
       let status = upstream.status;
       if (status === 203 || status === 302) status = 401; // Azure responde assim quando o token não vale
       if (status === 401) return send(res, 401, { message: 'O Azure recusou o token (expirado ou sem permissão). Abra ⚙ e informe um novo.' });
-      return send(res, status, buf, upstream.headers.get('content-type') || 'application/json');
+      return send(res, status, buf, upstream.headers.get('content-type') || 'application/json', rlInfo ? { 'X-Apontador-RateLimit': rlInfo } : {});
     }
     return send(res, 404, { message: 'Não encontrado' });
   } catch (e) {
@@ -692,9 +698,9 @@ async function presenceBeat(closing) {
     if (!r.ok) log('Presença: o Azure respondeu', r.status);
   } catch (e) { log('Presença: não consegui enviar', e?.cause || e); }
 }
-// só conta como aberto se a janela deu sinal nos últimos 3 min (evita "fantasma" com o app esquecido sem janela)
+// a cada 5 min, só se a janela deu sinal nos últimos 6 min (evita "fantasma" com o app esquecido sem janela)
 setTimeout(() => presenceBeat(false), 5000);
-setInterval(() => { if (Date.now() - lastPing < 180e3) presenceBeat(false); }, 120e3);
+setInterval(() => { if (Date.now() - lastPing < 360e3) presenceBeat(false); }, 300e3);
 
 // ───────── Início ─────────
 loadConfig();
