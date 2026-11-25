@@ -213,6 +213,10 @@
   .created li { margin: 3px 0; }
   .hol { display: inline-block; margin-top: 3px; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 8px; border: 1px solid #b91c1c; color: #fca5a5; background: rgba(185,28,28,.15); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dh.isHol { background: rgba(185,28,28,.08); }
+  .att { display: inline-block; margin-top: 3px; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 8px; border: 1px solid #b45309; color: #fcd34d; background: rgba(180,83,9,.15); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dh.isAtt { background: rgba(180,83,9,.1); }
+  .col.isAtt { background: repeating-linear-gradient(135deg, rgba(180,83,9,.09) 0 8px, transparent 8px 16px); }
+  .attblk { position: absolute; left: 2px; right: 2px; border: 1px dashed #b45309; background: rgba(180,83,9,.16); color: #fcd34d; font-size: 10.5px; font-weight: 600; padding: 2px 5px; border-radius: 5px; pointer-events: none; overflow: hidden; z-index: 0; }
   .col.isHol { background: repeating-linear-gradient(135deg, rgba(185,28,28,.06) 0 8px, transparent 8px 16px); }
   .bars .b.hol i, .bars2 .b.hol i { opacity: .5; }
   .xlab span.hol, .bars .b.hol span { color: #fca5a5; }
@@ -410,9 +414,25 @@
   }
   rebuildHolidays();
   function applyHolidays(r) { if (!r) return; HOL_SAVED = r.holidays || []; if (r.team) HOL_TEAM = r.team; if (r.teamInfo) HOL_TEAMINFO = r.teamInfo; rebuildHolidays(); }
-  async function loadHolidays(refresh) { try { applyHolidays(await local('/api/holidays' + (refresh ? '?refresh=1' : ''))); } catch { /* mantém os nacionais */ } rebuildHolidays(); }
+  async function loadHolidays(refresh) { try { applyHolidays(await local('/api/holidays' + (refresh ? '?refresh=1' : ''))); } catch { /* mantém os nacionais */ } rebuildHolidays(); await loadAtestados(); }
   const holidayOf = (d) => HOL.get(dateInput(d)) || null;
-  const isWorkday = (d) => d.getDay() % 6 !== 0 && !holidayOf(d);
+  // Atestados: período de/até, dia inteiro ou só um horário. Dia inteiro sai das metas (como feriado);
+  // parte do dia desconta essas horas da meta do dia. Ficam guardados só neste PC (atestados.json).
+  let ATT = [];
+  const hmMin = (t) => { const [h, m] = String(t || '').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+  function attOf(d) {
+    const k = dateInput(d);
+    const a = ATT.find((x) => x.from <= k && k <= (x.to || x.from));
+    if (!a) return null;
+    const hours = a.allDay ? prefs.dailyGoal : Math.max(0, (hmMin(a.end) - hmMin(a.start)) / 60);
+    return { ...a, hours, label: a.allDay ? 'Atestado' : `Atestado ${a.start}–${a.end}` };
+  }
+  const fullAtt = (d) => { const a = attOf(d); return !!(a && a.allDay); };
+  async function loadAtestados() { try { ATT = (await local('/api/atestados')).atestados || []; } catch { /* sem atestados */ } }
+  const isWorkday = (d) => d.getDay() % 6 !== 0 && !holidayOf(d) && !fullAtt(d);
+  // Meta de horas de um dia: zero em fim de semana, feriado e atestado de dia inteiro; atestado de parte do dia desconta
+  const dayGoalOf = (d) => { if (!isWorkday(d)) return 0; const a = attOf(d); return Math.max(0, prefs.dailyGoal - (a ? a.hours : 0)); };
+  const hoursGoalIn = (a, b) => { let t = 0; for (let d = new Date(a); d < b; d = addDays(d, 1)) t += dayGoalOf(d); return t; };
   const workdaysIn = (a, b) => { let n = 0; for (let d = new Date(a); d < b; d = addDays(d, 1)) if (isWorkday(d)) n++; return n; };
 
   // ───────── Sessões (mesmo formato da extensão Work Session Hub) ─────────
@@ -828,7 +848,7 @@
     const sameM = S.weekStart.getMonth() === end.getMonth();
     $('.week-label').textContent = `${S.weekStart.getDate()}${sameM ? '' : ' ' + MONTHS[S.weekStart.getMonth()]} – ${end.getDate()} ${MONTHS[end.getMonth()]} ${end.getFullYear()}`;
     const total = weekSegments().reduce((a, s) => a + s.hours, 0);
-    const goal = prefs.dailyGoal * workdaysIn(S.weekStart, addDays(S.weekStart, 7));
+    const goal = hoursGoalIn(S.weekStart, addDays(S.weekStart, 7));
     $('.goal-txt').textContent = `Semana: ${fmtH(total)} / ${fmtH(goal)}`;
     const bar = $('.goal .bar');
     bar.querySelector('i').style.width = `${goal ? Math.min(100, (100 * total) / goal) : 100}%`;
@@ -974,12 +994,13 @@
     let head = '<div></div>';
     for (let d = 0; d < 7; d++) {
       const day = addDays(S.weekStart, d);
-      const pct = Math.min(100, (100 * perDay[d]) / prefs.dailyGoal);
-      const hol = holidayOf(day), work = d < 5 && !hol;
-      head += `<div class="dh${sameDay(day, today) ? ' today' : ''}${d >= 5 ? ' we' : ''}${hol ? ' isHol' : ''}" data-day="${d}">
+      const hol = holidayOf(day), att = attOf(day), dg = dayGoalOf(day), work = d < 5 && dg > 0;
+      const pct = dg ? Math.min(100, (100 * perDay[d]) / dg) : 100;
+      head += `<div class="dh${sameDay(day, today) ? ' today' : ''}${d >= 5 ? ' we' : ''}${hol ? ' isHol' : ''}${att && att.allDay ? ' isAtt' : ''}" data-day="${d}">
         <div class="n">${DAY_NAMES[d]} ${pad(day.getDate())}/${pad(day.getMonth() + 1)}</div>
-        <div class="tot"><span>${fmtH(perDay[d])}</span><span>${work && perDay[d] < prefs.dailyGoal ? `faltam ${fmtH(prefs.dailyGoal - perDay[d])}` : ''}</span></div>
-        ${work ? `<div class="mini${perDay[d] < prefs.dailyGoal ? ' low' : ''}"><i style="width:${pct}%"></i></div>` : ''}
+        <div class="tot"><span>${fmtH(perDay[d])}</span><span>${work && perDay[d] < dg ? `faltam ${fmtH(dg - perDay[d])}` : ''}</span></div>
+        ${work ? `<div class="mini${perDay[d] < dg ? ' low' : ''}"><i style="width:${pct}%"></i></div>` : ''}
+        ${att ? `<span class="att" title="${esc(att.label)}${att.note ? ' · ' + esc(att.note) : ''}${att.allDay ? ' — dia fora da meta' : ` — ${fmtH(att.hours)} a menos na meta do dia`}">🩺 ${esc(att.label)}</span>` : ''}
         ${hol ? `<span class="hol" title="Feriado: ${esc(hol.name)}${hol.source === 'clockin' ? ' (Clockin)' : hol.source === 'manual' ? ' (adicionado por você)' : ' (nacional)'}">Feriado: ${esc(hol.name)}</span>` : ''}</div>`;
     }
     $('.cal-head').innerHTML = head;
@@ -999,6 +1020,11 @@
         const mins = today.getHours() * 60 + today.getMinutes() - h0 * 60;
         if (mins >= 0 && mins <= (h1 - h0) * 60) inner += `<div class="now" style="top:${(mins * PX_PER_HOUR) / 60}px"></div>`;
       }
+      { const a = attOf(day);
+        if (a && !a.allDay) {
+          const t = ((hmMin(a.start) - h0 * 60) * PX_PER_HOUR) / 60, hh = ((hmMin(a.end) - hmMin(a.start)) * PX_PER_HOUR) / 60;
+          inner += `<div class="attblk" style="top:${t}px;height:${Math.max(8, hh)}px" title="${esc(a.label)}${a.note ? ' · ' + esc(a.note) : ''}">🩺 Atestado ${esc(a.start)}–${esc(a.end)}</div>`;
+        } }
       for (const s of segs.filter((x) => x.day === d)) {
         const top = ((s.a.getHours() * 60 + s.a.getMinutes() - h0 * 60) * PX_PER_HOUR) / 60;
         const endMin = sameDay(s.a, s.b) ? s.b.getHours() * 60 + s.b.getMinutes() : 24 * 60;
@@ -1009,7 +1035,7 @@
           title="#${s.it.id} ${esc(s.it.title)}\n${timeStr(new Date(s.e.start))}–${realEnd} (${fmtH(entryHours(s.e))})${s.e.notes ? '\n' + esc(s.e.notes) : ''}">
           <b>#${s.it.id} ${esc(s.it.title)}</b>${hgt > 26 ? `${timeStr(s.a)}–${s.e.end ? timeStr(s.b) : 'agora'} · ${fmtH(s.hours)}` : ''}</div>`;
       }
-      cols += `<div class="col${d >= 5 ? ' we' : ''}${sameDay(day, today) ? ' today' : ''}${holidayOf(day) ? ' isHol' : ''}" data-day="${d}" style="height:${height}px">${inner}</div>`;
+      cols += `<div class="col${d >= 5 ? ' we' : ''}${sameDay(day, today) ? ' today' : ''}${holidayOf(day) ? ' isHol' : ''}${fullAtt(day) ? ' isAtt' : ''}" data-day="${d}" style="height:${height}px">${inner}</div>`;
     }
     const grid = $('.grid');
     grid.dataset.h0 = h0; grid.dataset.h1 = h1;
@@ -2406,6 +2432,20 @@
         <div style="font-size:12px"><a href="https://dev.azure.com/${encodeURIComponent(S.org)}/_usersSettings/tokens" target="_blank" rel="noopener">Gerenciar meus tokens no Azure ↗</a> <span class="muted">· o token fica criptografado só para o seu usuário do Windows</span></div>
       </div>
       <div class="tok">
+        <div style="display:flex;align-items:center;gap:8px"><b>🩺 Atestados</b><span class="muted" style="font-size:12px">· dia inteiro sai das metas; parte do dia desconta as horas · na sincronização com o Clockin, o dia vai como atestado</span></div>
+        <div class="attl" style="margin:8px 0"></div>
+        <div class="row" style="align-items:flex-end;gap:8px;flex-wrap:wrap">
+          <label style="flex:0 0 150px">De<input type="date" class="a-from"></label>
+          <label style="flex:0 0 150px">Até<input type="date" class="a-to"></label>
+          <label class="chk" style="flex:0 0 auto;margin-bottom:8px"><input type="checkbox" class="a-all" checked> Dia inteiro</label>
+          <label style="flex:0 0 105px" class="a-hrs">Início<input type="time" class="a-start" value="08:00" step="300" disabled></label>
+          <label style="flex:0 0 105px" class="a-hrs">Fim<input type="time" class="a-end" value="12:00" step="300" disabled></label>
+          <label style="flex:1 1 160px">Observação <span class="muted">(opcional)</span><input class="a-note" maxlength="80" placeholder="Ex.: consulta, exame"></label>
+          <button class="a-add" style="margin-bottom:1px">+ Adicionar</button>
+        </div>
+        <div class="muted" style="font-size:11.5px;margin-top:4px">Fica guardado só neste computador. Nada vai para o Azure DevOps.</div>
+      </div>
+      <div class="tok">
         <div style="display:flex;align-items:center;gap:8px"><b>📅 Feriados</b><span class="muted" style="font-size:12px">· não contam nas metas de horas e de cards</span></div>
         <div class="muted" style="font-size:12px;margin:4px 0 6px">Os nacionais já vêm no app. Os da empresa e da cidade chegam pela <b>lista da equipe</b> (baixada sozinha do repositório) ou, para quem usa, pelo Clockin. Você também pode adicionar e desativar à mão.</div>
         <div class="h-team muted" style="font-size:12px;margin-bottom:6px"></div>
@@ -2520,6 +2560,39 @@
         if (!copied) { const ta = box.querySelector('textarea'); ta.focus(); ta.select(); }
       });
     };
+    // Atestados
+    const fmtD = (k) => k.split('-').reverse().join('/');
+    const drawAtt = () => {
+      const list = ATT.slice().sort((a, b) => b.from.localeCompare(a.from));
+      q('.attl').innerHTML = list.length ? list.map((a) => {
+        const days = (() => { let n = 0; for (let d = new Date(a.from + 'T12:00'); dateInput(d) <= (a.to || a.from); d = addDays(d, 1)) if (d.getDay() % 6 !== 0) n++; return n; })();
+        return `<div class="hr"><span class="mono" style="width:190px">${fmtD(a.from)}${a.to && a.to !== a.from ? ' – ' + fmtD(a.to) : ''}</span>
+          <span style="width:150px">${a.allDay ? `dia inteiro${days > 1 ? ` · ${days} dias úteis` : ''}` : `${esc(a.start)}–${esc(a.end)} (${fmtH((hmMin(a.end) - hmMin(a.start)) / 60)})`}</span>
+          <span class="muted" style="flex:1">${esc(a.note || '')}</span><button class="ibtn a-del" data-id="${esc(a.id)}" title="Remover">✕</button></div>`;
+      }).join('') : '<div class="hr muted">Nenhum atestado cadastrado.</div>';
+      q('.attl').querySelectorAll('.a-del').forEach((b) => b.addEventListener('click', async () => {
+        try { ATT = (await local('/api/atestados', { method: 'POST', body: { remove: b.dataset.id } })).atestados; drawAtt(); render(); } catch (e) { msg(e.message, '#fca5a5'); }
+      }));
+    };
+    const syncAll = () => { const on = q('.a-all').checked; q('.a-start').disabled = on; q('.a-end').disabled = on; q('.a-to').disabled = !on; if (!on) q('.a-to').value = q('.a-from').value; };
+    q('.a-all').addEventListener('change', syncAll);
+    q('.a-from').value = dateInput(new Date());
+    q('.a-from').addEventListener('change', () => { if (!q('.a-to').value || q('.a-to').value < q('.a-from').value || !q('.a-all').checked) q('.a-to').value = q('.a-from').value; });
+    q('.a-add').addEventListener('click', async () => {
+      const from = q('.a-from').value, allDay = q('.a-all').checked, to = allDay ? (q('.a-to').value || from) : from;
+      const start = q('.a-start').value, end = q('.a-end').value;
+      if (!from) { q('.a-from').focus(); return; }
+      if (to < from) { msg('A data "Até" não pode ser antes de "De".', '#fca5a5'); return; }
+      if (!allDay && (!start || !end || hmMin(end) <= hmMin(start))) { msg('Informe o horário do atestado (o fim depois do início).', '#fca5a5'); return; }
+      const clash = ATT.find((a) => a.from <= to && from <= (a.to || a.from));
+      if (clash) { msg(`Já existe um atestado em ${fmtD(clash.from)}${clash.to && clash.to !== clash.from ? ' – ' + fmtD(clash.to) : ''}. Remova antes de cadastrar outro no mesmo dia.`, '#fca5a5'); return; }
+      try {
+        ATT = (await local('/api/atestados', { method: 'POST', body: { from, to, allDay, start: allDay ? null : start, end: allDay ? null : end, note: q('.a-note').value.trim() } })).atestados;
+        q('.a-note').value = ''; drawAtt(); render(); msg('Atestado cadastrado.', '#86efac');
+      } catch (e) { msg(e.message, '#fca5a5'); }
+    });
+    syncAll(); q('.a-to').value = q('.a-from').value;
+    loadAtestados().then(drawAtt);
     q('.h-opt').querySelectorAll('input').forEach((i) => i.addEventListener('change', () => {
       prefs.optHol = [...q('.h-opt').querySelectorAll('input:checked')].map((x) => x.dataset.k);
       savePrefs(); rebuildHolidays(); drawHol(); render();

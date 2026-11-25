@@ -125,6 +125,12 @@ function upsertHolidays(items, source) {
   return { changed, list };
 }
 
+// Atestados: guardados só neste PC (%APPDATA%\ApontadorHoras\atestados.json). Dia inteiro ou um horário.
+const ATT_FILE = path.join(APP_DIR, 'atestados.json');
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+function loadAtestados() { try { const j = JSON.parse(fs.readFileSync(ATT_FILE, 'utf8')); return Array.isArray(j) ? j : []; } catch { return []; } }
+function saveAtestados(list) { fs.mkdirSync(APP_DIR, { recursive: true }); fs.writeFileSync(ATT_FILE, JSON.stringify(list, null, 2)); }
+
 // Lista da equipe: feriados.json no repositório do GitHub, para quem não tem Clockin.
 // Quem mantém o repositório edita o arquivo; os apps baixam ao abrir e a cada 6 h e guardam uma cópia.
 const TEAM_HOL_FILE = path.join(APP_DIR, 'feriados-equipe.json');
@@ -278,7 +284,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const sessions = await exportSessions(from, to);
         log('Exportadas', sessions.length, 'sessões para o Clockin');
-        return send(res, 200, { email: config.email, sessions });
+        return send(res, 200, { email: config.email, sessions, atestados: loadAtestados() });
       } catch (e) {
         return send(res, e.status === 401 || e.status === 203 ? 401 : 502, { message: e.status === 401 || e.status === 203 ? 'O token do Azure expirou. Abra o Apontador e informe um novo.' : e.message });
       }
@@ -358,6 +364,20 @@ const server = http.createServer(async (req, res) => {
       if (!config || !pat) return send(res, 404, { message: 'Nenhum token salvo.' });
       try { const me = await whoAmI(config.org, pat); return send(res, 200, { ok: true, me }); }
       catch (e) { return send(res, 400, { message: e.message }); }
+    }
+    if (url.pathname === '/api/atestados' && req.method === 'GET') return send(res, 200, { atestados: loadAtestados() });
+    if (url.pathname === '/api/atestados' && req.method === 'POST') {
+      const body = JSON.parse((await readBody(req)).toString() || '{}');
+      let list = loadAtestados();
+      if (body.remove) { list = list.filter((a) => a.id !== String(body.remove)); saveAtestados(list); return send(res, 200, { atestados: list }); }
+      const from = String(body.from || ''), to = String(body.to || body.from || ''), allDay = body.allDay !== false;
+      if (!DATE_RE.test(from) || !DATE_RE.test(to) || to < from) return send(res, 400, { message: 'Datas inválidas.' });
+      if (!allDay && (!TIME_RE.test(body.start || '') || !TIME_RE.test(body.end || '') || body.end <= body.start)) return send(res, 400, { message: 'Horário inválido.' });
+      if (list.some((a) => a.from <= to && from <= (a.to || a.from))) return send(res, 409, { message: 'Já existe um atestado nesse período.' });
+      list.push({ id: crypto.randomBytes(6).toString('hex'), from, to, allDay, start: allDay ? null : body.start, end: allDay ? null : body.end, note: String(body.note || '').slice(0, 80), createdAt: new Date().toISOString() });
+      list.sort((a, b) => a.from.localeCompare(b.from));
+      saveAtestados(list);
+      return send(res, 200, { atestados: list });
     }
     if (url.pathname === '/api/holidays' && req.method === 'GET') {
       if (url.searchParams.get('refresh') === '1') await fetchTeamHolidays();

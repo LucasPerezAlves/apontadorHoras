@@ -1,2 +1,3 @@
-- O app consulta o Azure bem menos (cerca de 10x menos): ele estava contribuindo para o aviso de limite de uso do Azure DevOps
-- Se o Azure avisar que está limitando, a atualização automática pausa sozinha por 10 minutos
+- ⚙ Configurações → Atestados: cadastre atestado de dia inteiro (um ou vários dias) ou de parte do dia
+- Dia inteiro sai das metas de horas e de cards; parte do dia desconta as horas da meta do dia
+- O calendário mostra o atestado no dia (e a faixa do horário, quando é parte do dia)
