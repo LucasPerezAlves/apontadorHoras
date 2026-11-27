@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Clockin ← Apontador de Horas
 // @namespace    lpalves.apontador-horas
-// @version      1.3.0
+// @version      1.3.1
 // @description  Sincroniza o Clockin com o Apontador de Horas: compara cada dia, mostra o que muda (editar, criar, excluir) e aplica pelo próprio Clockin.
 // @match        https://clockin.intranet.premiersoft.net/*
 // @grant        GM_xmlhttpRequest
@@ -318,6 +318,26 @@
   }
 
   // ───────── Ações no Clockin ─────────
+  // Preenche os campos e confere; o Clockin às vezes reescreve um campo logo depois (ex.: ao trocar o projeto)
+  const sameVal = (kind, got, want) => {
+    got = String(got ?? '').trim(); want = String(want ?? '');
+    if (kind === 'date') { const m = got.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if (m) got = `${m[3]}-${m[2]}-${m[1]}`; return got === want; }
+    if (kind === 'time') return got.slice(0, 5) === want;
+    return got.replace(/\s+/g, ' ') === want.replace(/\s+/g, ' ').trim();
+  };
+  async function fillChecked(fields, where) {
+    for (const f of fields) if (f.kind === 'text' && f.el.maxLength > 0 && f.value.length > f.el.maxLength) f.value = f.value.slice(0, f.el.maxLength);
+    let bad = [];
+    for (let tryN = 0; tryN < 3; tryN++) {
+      for (const f of (tryN ? bad : fields)) { f.el.focus?.(); setNative(f.el, f.value); await sleep(120 + tryN * 150); }
+      await sleep(300 + tryN * 300);
+      bad = fields.filter((f) => !sameVal(f.kind, f.el.value, f.value));
+      if (!bad.length) return;
+    }
+    const det = bad.map((f) => `${f.label} ficou "${f.el.value}" (esperado "${f.value}")`).join('; ');
+    console.warn('[Apontador] campos recusados', bad.map((f) => ({ label: f.label, got: f.el.value, want: f.value, type: f.el.type, max: f.el.max, min: f.el.min, maxLength: f.el.maxLength })));
+    throw new Error(`${where} não aceitou: ${det}.`);
+  }
   async function doCreate(d, project) {
     const manual = byText('button', 'Manual');
     if (manual) { manual.click(); await sleep(200); }
@@ -329,9 +349,13 @@
     const t1 = document.querySelector('input[aria-label="Horário inicial"]'), t2 = document.querySelector('input[aria-label="Horário final"]');
     if (!ta || !date || !t1 || !t2) throw new Error('Não achei os campos do formulário. Nada foi enviado.');
     const st = new Date(d.s.start);
-    setNative(ta, d.desc); setNative(date, ymd(st)); await sleep(80);
-    setNative(t1, d.start); await sleep(80); setNative(t2, d.end); await sleep(250);
-    if (date.value !== ymd(st) || t1.value !== d.start || t2.value !== d.end || ta.value !== d.desc) throw new Error('O formulário não aceitou os valores; nada foi enviado.');
+    await sleep(400);
+    await fillChecked([
+      { el: date, value: ymd(st), kind: 'date', label: 'Data' },
+      { el: t1, value: d.start, kind: 'time', label: 'Horário inicial' },
+      { el: t2, value: d.end, kind: 'time', label: 'Horário final' },
+      { el: ta, value: d.desc, kind: 'text', label: 'Descrição' },
+    ], 'O formulário (nada foi enviado)');
     const btn = byText('button', 'Apontar');
     if (!btn || btn.disabled) throw new Error('O botão Apontar está indisponível.');
     const p = waitToast(); btn.click();
@@ -352,12 +376,14 @@
     if (!desc || times.length < 2) throw new Error('Não achei os campos de edição.');
     const trig = form.querySelector('[role=combobox]');
     if (trig) await selectProjectIn(trig, project);
-    setNative(desc, d.desc); await sleep(60);
-    setNative(times[0], d.start); await sleep(80); setNative(times[1], d.end); await sleep(250);
-    if (times[0].value !== d.start || times[1].value !== d.end || desc.value !== d.desc) {
-      byText('button', 'Cancelar', form)?.click();
-      throw new Error('A edição não aceitou os valores; cancelei sem salvar.');
-    }
+    await sleep(400);
+    try {
+      await fillChecked([
+        { el: times[0], value: d.start, kind: 'time', label: 'Horário inicial' },
+        { el: times[1], value: d.end, kind: 'time', label: 'Horário final' },
+        { el: desc, value: d.desc, kind: 'text', label: 'Descrição' },
+      ], 'A edição (cancelei sem salvar)');
+    } catch (err) { byText('button', 'Cancelar', form)?.click(); throw err; }
     const p = waitToast(); save.click();
     const r = await p;
     if (!r.ok) { byText('button', 'Cancelar', form)?.click(); throw new Error(r.text); }

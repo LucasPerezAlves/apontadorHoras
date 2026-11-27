@@ -1,1 +1,2 @@
-- Ajustes internos, sem mudança na tela
+- Clockin: o preenchimento confere cada campo e tenta de novo quando o Clockin muda um valor sozinho
+- Clockin: se algum campo for recusado, o erro diz qual (data, horário ou descrição) e o valor que ficou
