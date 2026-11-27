@@ -722,6 +722,124 @@ async function presenceBeat(closing) {
 setTimeout(() => presenceBeat(false), 5000);
 setInterval(() => { if (Date.now() - lastPing < 360e3) presenceBeat(false); }, 300e3);
 
+// ───────── Métrica de atraso no apontamento (só no PC com presenca.on) ─────────
+// Lê o histórico (revisões) dos cards da área da equipe e, para cada sessão de horas, compara o dia trabalhado com o
+// dia em que ela foi gravada no card. Grava só um resumo por pessoa em %LOCALAPPDATA%\ApontadorHoras\metrica-atraso.json.
+const METRIC_FILE = path.join(DATA_DIR, 'metrica-atraso.json');
+const METRIC_FROM = '2026-10-01';
+const METRIC_TOOL_DAY = '2026-11-18'; // versão 1.0
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const localDay = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+async function adoJsonPaced(url, opts) {
+  for (let i = 0; i < 6; i++) {
+    const r = await adoFetch(url, { ...opts, redirect: 'manual', headers: { Authorization: authHeader(pat), Accept: 'application/json', 'Content-Type': 'application/json', 'X-TFS-FedAuthRedirect': 'Suppress' } });
+    const ra = Number(r.headers.get('retry-after')) || 0;
+    if (r.status === 429 || r.status === 503) { await sleep(Math.max(ra, 10 + i * 10) * 1000); continue; }
+    if (!r.ok) { const e = new Error(`Azure respondeu ${r.status}`); e.status = r.status; throw e; }
+    if (ra || r.headers.get('x-ratelimit-delay')) await sleep(Math.max(ra, 3) * 1000);
+    return r.json();
+  }
+  throw new Error('Azure limitou as consultas várias vezes seguidas');
+}
+function metricHolidays() {
+  const set = new Set(['2026-10-12', '2026-11-02', '2026-11-20']);
+  (teamHol.feriados || []).forEach((h) => set.add(h.date));
+  try { const j = JSON.parse(fs.readFileSync(HOLIDAYS_FILE, 'utf8')); (Array.isArray(j) ? j : j.holidays || []).forEach((h) => h && h.date && set.add(h.date)); } catch { /* sem arquivo */ }
+  return set;
+}
+function workdaysBetween(a, b, hol) { // dias úteis depois de a, até b (0 = mesmo dia)
+  if (b <= a) return 0;
+  let n = 0; const d = new Date(a + 'T12:00:00');
+  for (;;) { d.setDate(d.getDate() + 1); const s = localDay(d); if (s > b) break; const w = d.getDay(); if (w && w !== 6 && !hol.has(s)) n++; }
+  return n;
+}
+async function computeLagMetric() {
+  if (!config || !pat || !config.email) return;
+  const org = encodeURIComponent(config.org), proj = encodeURIComponent(config.project);
+  const wiql = (q) => adoJsonPaced(`https://dev.azure.com/${org}/${proj}/_apis/wit/wiql?$top=4000&api-version=7.1`, { method: 'POST', body: JSON.stringify({ query: q }) });
+  const fieldsOf = async (ids, fields) => {
+    const out = [];
+    for (let i = 0; i < ids.length; i += 200) {
+      const j = await adoJsonPaced(`https://dev.azure.com/${org}/_apis/wit/workitems?ids=${ids.slice(i, i + 200).join(',')}&fields=${fields}&errorPolicy=Omit&api-version=7.1`);
+      out.push(...(j.value || []).filter((w) => w && w.fields)); await sleep(300);
+    }
+    return out;
+  };
+  log('Métrica de atraso: começando');
+  // 1) Áreas da equipe = áreas dos cards em meu nome nos últimos 60 dias
+  const mine = await wiql(`SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.AssignedTo] = @Me AND [System.ChangedDate] >= @Today - 60`);
+  const areaCount = {};
+  for (const w of await fieldsOf((mine.workItems || []).map((x) => x.id).slice(0, 400), 'System.AreaPath')) areaCount[w.fields['System.AreaPath']] = (areaCount[w.fields['System.AreaPath']] || 0) + 1;
+  const tot = Object.values(areaCount).reduce((a, b) => a + b, 0);
+  const areas = Object.entries(areaCount).sort((a, b) => b[1] - a[1]).filter(([, n], i) => i === 0 || n / tot >= 0.1).slice(0, 4).map(([a]) => a);
+  if (!areas.length) throw new Error('não achei a área da equipe');
+  // 2) Cards dessas áreas alterados no período, com sessões a partir de METRIC_FROM
+  const q = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND (${areas.map((a) => `[System.AreaPath] = '${a.replace(/'/g, "''")}'`).join(' OR ')}) AND [System.ChangedDate] >= '${METRIC_FROM}'`;
+  const ids = ((await wiql(q)).workItems || []).map((x) => x.id);
+  const withWS = (await fieldsOf(ids, 'Custom.WorkSessionEntry')).filter((w) => parseWS(w.fields['Custom.WorkSessionEntry']).some((e) => e.start && localDay(e.start) >= METRIC_FROM)).map((w) => w.id).slice(0, 1500);
+  log('Métrica de atraso: áreas', areas, 'cards', ids.length, 'com sessões', withWS.length);
+  // 3) Revisões de cada card: quando cada sessão apareceu
+  const hol = metricHolidays(), today = localDay(new Date());
+  const rec = []; const names = {};
+  for (const id of withWS) {
+    const seen = new Set();
+    for (let skip = 0; ; skip += 200) {
+      const j = await adoJsonPaced(`https://dev.azure.com/${org}/_apis/wit/workItems/${id}/updates?$top=200&$skip=${skip}&api-version=7.1`);
+      const ups = j.value || [];
+      for (const u of ups) {
+        const by = u.revisedBy || {}; if (by.uniqueName) names[String(by.uniqueName).toLowerCase()] = by.displayName;
+        const f = u.fields && u.fields['Custom.WorkSessionEntry']; if (!f) continue;
+        const at = (u.fields['System.ChangedDate'] && u.fields['System.ChangedDate'].newValue) || u.revisedDate;
+        for (const e of parseWS(f.newValue)) {
+          const email = String(e.userEmail || '').trim().toLowerCase(); if (!email || !e.start) continue;
+          const k = `${email}|${e.id || e.start}`; if (seen.has(k)) continue; seen.add(k);
+          const work = localDay(e.start), recDay = localDay(at);
+          if (work < METRIC_FROM || work > today) continue;
+          rec.push({ email, work, recDay, lag: recDay > work ? Math.max(1, workdaysBetween(work, recDay, hol)) : 0 });
+        }
+      }
+      if (ups.length < 200) break;
+    }
+    await sleep(250);
+  }
+  // 4) Quem usa o app (coleção de presença)
+  let toolUsers = [];
+  try { const p = await adoJsonPaced(PRESENCE_URL()); toolUsers = (Array.isArray(p) ? p : p.value || []).map((d) => String(d.email || d.id).toLowerCase()); } catch { /* sem presença */ }
+  // 5) Resumo por pessoa: por dia trabalhado, o primeiro registro; "lote" = um dia em que gravou 3+ dias anteriores
+  const people = {};
+  for (const r of rec) {
+    const p = people[r.email] || (people[r.email] = { days: {} });
+    const d = p.days[r.work]; if (!d || r.recDay < d.recDay) p.days[r.work] = { recDay: r.recDay, lag: r.lag };
+  }
+  const weekOf = (s) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return localDay(d); };
+  const summarize = (days) => {
+    const list = Object.entries(days); const byRec = {};
+    for (const [work, d] of list) if (d.lag >= 1) (byRec[d.recDay] = byRec[d.recDay] || new Set()).add(work);
+    const sizes = Object.values(byRec).map((s) => s.size);
+    return { dias: list.length, mesmoDia: list.filter(([, d]) => d.lag === 0).length, diaSeguinte: list.filter(([, d]) => d.lag === 1).length,
+      doisOuMais: list.filter(([, d]) => d.lag >= 2).length, atrasoMedio: list.length ? +(list.reduce((a, [, d]) => a + d.lag, 0) / list.length).toFixed(2) : null,
+      lotes: sizes.filter((n) => n >= 3).length, maiorLote: sizes.length ? Math.max(...sizes) : 0 };
+  };
+  const out = { geradoEm: new Date().toISOString(), de: METRIC_FROM, ferramentaDesde: METRIC_TOOL_DAY, areas, cards: withWS.length, sessoes: rec.length, pessoas: [] };
+  for (const [email, p] of Object.entries(people)) {
+    const pick = (f) => Object.fromEntries(Object.entries(p.days).filter(([w]) => f(w)));
+    const weeks = {};
+    for (const [w, d] of Object.entries(p.days)) (weeks[weekOf(w)] = weeks[weekOf(w)] || {})[w] = d;
+    out.pessoas.push({ email, nome: names[email] || email, usaApp: toolUsers.includes(email),
+      antes: summarize(pick((w) => w < METRIC_TOOL_DAY)), depois: summarize(pick((w) => w >= METRIC_TOOL_DAY)),
+      semanas: Object.fromEntries(Object.entries(weeks).sort().map(([k, v]) => [k, summarize(v)])) });
+  }
+  out.pessoas.sort((a, b) => a.nome.localeCompare(b.nome));
+  fs.writeFileSync(METRIC_FILE, JSON.stringify(out, null, 2));
+  log('Métrica de atraso gravada:', out.pessoas.length, 'pessoas,', rec.length, 'sessões');
+}
+// Roda uma vez por dia, 90 s depois de abrir, só onde existe presenca.on
+setTimeout(async () => {
+  if (!PRESENCE_ON()) return;
+  try { if (fs.existsSync(METRIC_FILE) && Date.now() - fs.statSync(METRIC_FILE).mtimeMs < 20 * 3600e3) return; } catch { /* segue */ }
+  try { await computeLagMetric(); } catch (e) { log('Métrica de atraso: falhou', e?.cause || e); }
+}, 90e3);
+
 // ───────── Início ─────────
 loadConfig();
 server.on('error', (e) => {

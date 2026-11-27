@@ -1,3 +1,1 @@
-- ⚙ Configurações → Atestados: cadastre atestado de dia inteiro (um ou vários dias) ou de parte do dia
-- Dia inteiro sai das metas de horas e de cards; parte do dia desconta as horas da meta do dia
-- O calendário mostra o atestado no dia (e a faixa do horário, quando é parte do dia)
+- Ajustes internos, sem mudança na tela
